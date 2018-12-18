@@ -412,7 +412,7 @@ withBackground =
                 { description = "", src = assetUrl "backgroundSide.png" }
     in
     row
-        [ height fill, width fill, clip ]
+        [ height (fill |> maximum 600), width fill, clip ]
         [ leftImage
         , rightImage
         ]
