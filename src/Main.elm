@@ -40,7 +40,7 @@ main =
 
 
 
--- ROUTES
+-- ROUTES ######################################################################
 
 
 route : Model -> Parser (Page -> a) a
@@ -102,7 +102,7 @@ queryUrl =
 
 
 
--- MODEL
+-- MODEL #######################################################################
 
 
 type alias Model =
@@ -161,7 +161,7 @@ init flags url key =
 
 
 
--- FUNCTIONS FOR DIRECTORY AND FILTER
+-- FUNCTIONS FOR DIRECTORY AND FILTER ##########################################
 
 
 filesInDir : String -> DirListing -> List String
@@ -262,7 +262,7 @@ prevImage key data =
 
 
 
--- UPDATE
+-- UPDATE ######################################################################
 
 
 type Msg
@@ -371,7 +371,7 @@ update msg model =
 
 
 
--- SUBSCRIPTIONS
+-- SUBSCRIPTIONS ###############################################################
 
 
 subscriptions : Model -> Sub Msg
@@ -380,7 +380,8 @@ subscriptions model =
 
 
 
--- VIEW
+-- VIEW #######################################################################
+-- GENERAL
 
 
 view : Model -> Browser.Document Msg
@@ -429,6 +430,63 @@ pageContent model =
 
         NotFound ->
             el [ centerX ] (text "Not found, buddy")
+
+
+siteHeader : Element Msg
+siteHeader =
+    row
+        [ alignTop
+        , width fill
+        , spacing 10
+        , paddingXY 2 10
+        , Background.color (rgb255 200 200 200)
+        ]
+        [ nameElement "Andrew Dilmore"
+        ]
+
+
+siteFooter : Element Msg
+siteFooter =
+    el
+        [ alignBottom
+        , width fill
+        , spacing 10
+        , paddingXY 2 10
+        , Background.color (rgb255 200 200 200)
+        , height (px 30)
+        ]
+        Element.none
+
+
+nameElement : String -> Element msg
+nameElement name =
+    link
+        [ Font.color (rgb255 0 0 0)
+        , Font.size (scaled 3)
+        , padding 10
+        ]
+        { label = text name
+        , url = homeUrl
+        }
+
+
+headerButtonElement : { title : String, url : String } -> Element msg
+headerButtonElement content =
+    link
+        [ Background.color (rgb255 100 100 100)
+        , Font.color (rgb255 255 255 255)
+        , Border.rounded 3
+        , Font.size (scaled 2)
+        , padding 10
+        ]
+        { label = text content.title
+        , url = content.url
+        }
+
+
+
+-- PORTFOLIO
+-- Thumbnail List
 
 
 thumbnailListElement : Model -> Element Msg
@@ -491,6 +549,10 @@ thumbnailElement viewport src =
             , centerY
             , clip
             ]
+
+
+
+-- Full size image slideshow
 
 
 fullSizeElement : Viewport -> FullSizeData -> Element Msg
@@ -557,65 +619,13 @@ fullSizeImageElement viewport data =
         |> (\img -> link [ centerX ] { label = img, url = thumbnailsUrl })
 
 
-siteHeader : Element Msg
-siteHeader =
-    row
-        [ alignTop
-        , width fill
-        , spacing 10
-        , paddingXY 2 10
-        , Background.color (rgb255 200 200 200)
-        ]
-        [ nameElement "Andrew Dilmore"
-        ]
 
-
-siteFooter : Element Msg
-siteFooter =
-    el
-        [ alignBottom
-        , width fill
-        , spacing 10
-        , paddingXY 2 10
-        , Background.color (rgb255 200 200 200)
-        , height (px 30)
-        ]
-        Element.none
-
-
-nameElement : String -> Element msg
-nameElement name =
-    link
-        [ Font.color (rgb255 0 0 0)
-        , Font.size (scaled 3)
-        , padding 10
-        ]
-        { label = text name
-        , url = homeUrl
-        }
-
-
-headerButtonElement : { title : String, url : String } -> Element msg
-headerButtonElement content =
-    link
-        [ Background.color (rgb255 100 100 100)
-        , Font.color (rgb255 255 255 255)
-        , Border.rounded 3
-        , Font.size (scaled 2)
-        , padding 10
-        ]
-        { label = text content.title
-        , url = content.url
-        }
+-- VIEW HELPERS
 
 
 scaled : Int -> Int
 scaled =
     round << modular 16 1.25
-
-
-
--- UGLY VIEW HELPERS
 
 
 loaderElement : Element msg
@@ -625,7 +635,7 @@ loaderElement =
 
 
 
--- REQUESTS
+-- REQUESTS ####################################################################
 
 
 requestDirListing : Cmd Msg
@@ -651,6 +661,7 @@ decodeDirData =
 
 
 
+-- UTILITY #####################################################################
 -- CONSTANTS
 
 
