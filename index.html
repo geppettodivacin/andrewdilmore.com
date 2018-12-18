@@ -1,0 +1,19 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Main</title>
+  <script src="elm.js"></script>
+  <link rel="stylesheet" href="assets/loader-bouncing.css">
+</head>
+
+<div id="main"></div>
+<script>
+  (function() {
+    var app = Elm.Main.init({
+      node: document.getElementById('main'),
+      flags: {viewport: { height: window.innerHeight, width: window.innerWidth }}
+    });
+  } ());
+</script>
+</html>

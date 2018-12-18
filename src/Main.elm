@@ -4,6 +4,7 @@ import Browser
 import Browser.Dom as Dom
 import Browser.Events
 import Browser.Navigation as Navigation
+import Debug
 import Dict exposing (Dict)
 import Element exposing (..)
 import Element.Background as Background
@@ -14,9 +15,11 @@ import Element.Input as Input
 import Html exposing (Html)
 import Html.Attributes
 import Html.Events
+import Http
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as List
+import RemoteData exposing (RemoteData(..), WebData)
 import SelectList exposing (SelectList)
 import Task
 import Url exposing (Url)
@@ -53,19 +56,24 @@ toPage model url =
     Maybe.withDefault NotFound (Url.parse (route model) url)
 
 
-
--- TODO: Make the directory listing remote data, and use a proper loading page
--- for when we don't have a listing yet.
-
-
 toFullSizePage : Model -> Maybe String -> Page
 toFullSizePage model imageSrc =
-    case Maybe.andThen (makeFullSize model.dirListing model.filterPath) imageSrc of
-        Nothing ->
-            NotFound
+    case RemoteData.toMaybe model.dirListing of
+        Just dirListing ->
+            case Maybe.andThen (makeFullSize dirListing model.filterPath) imageSrc of
+                Nothing ->
+                    NotFound
 
-        Just data ->
-            FullSize data
+                Just data ->
+                    FullSize data
+
+        Nothing ->
+            case imageSrc of
+                Nothing ->
+                    NotFound
+
+                Just existingSrc ->
+                    FullSize (SelectList.singleton existingSrc)
 
 
 homeUrl : String
@@ -88,6 +96,11 @@ assetUrl src =
     Builder.absolute [ "assets", src ] []
 
 
+queryUrl : String
+queryUrl =
+    Builder.crossOrigin "http://andrewdilmore.com" [ "query" ] []
+
+
 
 -- MODEL
 
@@ -96,7 +109,7 @@ type alias Model =
     { key : Navigation.Key
     , viewport : Viewport
     , page : Page
-    , dirListing : DirListing
+    , dirListing : WebData DirListing
     , filterPath : FilterPath
     }
 
@@ -131,32 +144,20 @@ type FilterPath
     = FilterPath String (List String)
 
 
-init : {} -> Url -> Navigation.Key -> ( Model, Cmd Msg )
+init : { viewport : Viewport } -> Url -> Navigation.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
         initialModel =
             { key = key
-            , viewport = { width = 1000, height = 900 }
+            , viewport = flags.viewport
             , page = Thumbnails
-            , dirListing = defaultListing
-            , filterPath = FilterPath "images" []
+            , dirListing = NotAsked
+            , filterPath = FilterPath "images/" []
             }
     in
     ( { initialModel | page = toPage initialModel url }
-    , Task.perform (\size -> WindowResize (round size.viewport.width) (round size.viewport.height)) Dom.getViewport
+    , requestDirListing
     )
-
-
-defaultListing : DirListing
-defaultListing =
-    Dict.fromList
-        [ ( "images", DirData [] [ "images/Logos", "images/Adverts", "images/Composition" ] )
-        , ( "images/Logos", DirData [] [ "images/Logos/Brass Hats", "images/Logos/Orchid" ] )
-        , ( "images/Logos/Brass Hats", DirData [ "images/Logos/Brass Hats/Brass Hats Logo.png" ] [] )
-        , ( "images/Logos/Orchid", DirData [ "images/Logos/Orchid/Orchid Resort Branding.png" ] [] )
-        , ( "images/Adverts", DirData [ "images/Adverts/Mustache Factory Labels.png", "images/Adverts/Hot Sauce Ad.png", "images/Adverts/Coke ad mockup.png" ] [] )
-        , ( "images/Composition", DirData [ "images/Composition/Freedom is not Free.jpg", "images/Composition/Triad House.png", "images/Composition/AzlynProject 4.jpg" ] [] )
-        ]
 
 
 
@@ -189,6 +190,30 @@ currentFilter filterPath =
             filterList
                 |> List.head
                 |> Maybe.withDefault ""
+
+
+possibleFilters : DirListing -> FilterPath -> List String
+possibleFilters dirListing filterPath =
+    case Dict.get (currentFilter filterPath) dirListing of
+        Nothing ->
+            []
+
+        Just dirData ->
+            dirData.subDirs
+
+
+addFilter : String -> FilterPath -> FilterPath
+addFilter newFilter filterPath =
+    case filterPath of
+        FilterPath root filterList ->
+            FilterPath root (newFilter :: filterList)
+
+
+removeFilter : Int -> FilterPath -> FilterPath
+removeFilter count filterPath =
+    case filterPath of
+        FilterPath root filterList ->
+            FilterPath root (List.drop count filterList)
 
 
 makeFullSize : DirListing -> FilterPath -> String -> Maybe FullSizeData
@@ -245,6 +270,9 @@ type Msg
     | WindowResize Int Int
     | ClickedLink Browser.UrlRequest
     | ChangedUrl Url
+    | GotDirListing (Result Http.Error DirListing)
+    | AddFilter String
+    | RemoveFilters Int
     | OpenImage String
     | NextImage
     | PrevImage
@@ -274,6 +302,32 @@ update msg model =
                     toPage model url
             in
             ( { model | page = page }, Cmd.none )
+
+        GotDirListing result ->
+            let
+                newDirListing =
+                    RemoteData.fromResult (Debug.log "Result" result)
+
+                newModel =
+                    { model | dirListing = newDirListing }
+
+                newPage =
+                    case newModel.page of
+                        FullSize dirListing ->
+                            toFullSizePage
+                                newModel
+                                (Just (SelectList.selected dirListing))
+
+                        _ ->
+                            newModel.page
+            in
+            ( { newModel | page = newPage }, Cmd.none )
+
+        AddFilter newFilter ->
+            ( model, Cmd.none )
+
+        RemoveFilters count ->
+            ( model, Cmd.none )
 
         OpenImage img ->
             let
@@ -357,7 +411,7 @@ withBackground =
                 { description = "", src = assetUrl "backgroundSide.png" }
     in
     row
-        [ height (fill |> maximum 600), width fill, clip ]
+        [ height fill, width fill, clip ]
         [ leftImage
         , rightImage
         ]
@@ -379,10 +433,28 @@ pageContent model =
 
 thumbnailListElement : Model -> Element Msg
 thumbnailListElement model =
-    model.dirListing
-        |> filesInDir (currentFilter model.filterPath)
-        |> chunksOf rowLength
-        |> thumbnailColumn model.viewport
+    let
+        localLoaderElement =
+            loaderElement
+                |> el [ centerX, centerY ]
+                |> el [ width fill, height fill ]
+    in
+    case model.dirListing of
+        Success dirListing ->
+            dirListing
+                |> filesInDir (currentFilter model.filterPath)
+                |> chunksOf rowLength
+                |> thumbnailColumn model.viewport
+
+        NotAsked ->
+            localLoaderElement
+
+        Loading ->
+            localLoaderElement
+
+        Failure error ->
+            errorElement error
+                |> el [ centerX, centerY ]
 
 
 thumbnailColumn : Viewport -> List (List String) -> Element Msg
@@ -543,6 +615,42 @@ scaled =
 
 
 
+-- UGLY VIEW HELPERS
+
+
+loaderElement : Element msg
+loaderElement =
+    Html.div [ Html.Attributes.class "loader loader-bouncing is-active" ] []
+        |> Element.html
+
+
+
+-- REQUESTS
+
+
+requestDirListing : Cmd Msg
+requestDirListing =
+    Http.get { url = queryUrl, expect = Http.expectJson GotDirListing decodeDirListing }
+
+
+decodeDirListing : Decode.Decoder DirListing
+decodeDirListing =
+    Decode.dict decodeDirData
+
+
+decodeDirData : Decode.Decoder DirData
+decodeDirData =
+    let
+        decodeFiles =
+            Decode.field "files" (Decode.list Decode.string)
+
+        decodeSubDirs =
+            Decode.field "subdirs" (Decode.list Decode.string)
+    in
+    Decode.map2 DirData decodeFiles decodeSubDirs
+
+
+
 -- CONSTANTS
 
 
@@ -571,3 +679,38 @@ chunksOf n list =
 
         rest ->
             List.take n list :: chunksOf n rest
+
+
+errorElement : Http.Error -> Element msg
+errorElement error =
+    textColumn [ spacing 10, width (px 600) ]
+        [ paragraph []
+            [ text
+                """
+                I got an error trying to get the list of images. You should
+                try to reload the page first. If you still have problems, you
+                can email the website developer, Eric Dilmore, at
+                ericdilmore@gmail.com. Please include the error message below:
+                """
+            ]
+        , text (httpErrorToString error)
+        ]
+
+
+httpErrorToString : Http.Error -> String
+httpErrorToString error =
+    case error of
+        Http.BadUrl url ->
+            "I tried to send an HTTP request to a bad url: " ++ url ++ "."
+
+        Http.Timeout ->
+            "My request for information took too long."
+
+        Http.NetworkError ->
+            "I couldn't communicate with the network properly."
+
+        Http.BadStatus status ->
+            "The server I requested data from rejected us with this status code: " ++ String.fromInt status ++ "."
+
+        Http.BadBody jsonError ->
+            "I didn't understand the response I got from the server. My JSON decoder says:\n" ++ jsonError
