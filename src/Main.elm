@@ -46,8 +46,9 @@ main =
 route : Model -> Parser (Page -> a) a
 route model =
     oneOf
-        [ Url.map (toFullSizePage model) (s "full" <?> Query.string "image")
-        , Url.map Thumbnails top
+        [ Url.map (toFullSizePage model) (s "portfolio" </> s "full" <?> Query.string "image")
+        , Url.map Thumbnails (s "portfolio" </> top)
+        , Url.map (Home Nothing) top
         ]
 
 
@@ -78,17 +79,27 @@ toFullSizePage model imageSrc =
 
 homeUrl : String
 homeUrl =
-    thumbnailsUrl
+    Builder.absolute [] []
 
 
 thumbnailsUrl : String
 thumbnailsUrl =
-    Builder.absolute [] []
+    Builder.absolute [ "portfolio" ] []
 
 
 fullSizeUrl : String -> String
 fullSizeUrl imageSrc =
-    Builder.absolute [ "full" ] [ Builder.string "image" imageSrc ]
+    Builder.absolute [ "portfolio", "full" ] [ Builder.string "image" imageSrc ]
+
+
+aboutUrl : String
+aboutUrl =
+    Builder.absolute [ "about" ] []
+
+
+resumeUrl : String
+resumeUrl =
+    Builder.absolute [ "resume" ] []
 
 
 assetUrl : String -> String
@@ -121,7 +132,8 @@ type alias Viewport =
 
 
 type Page
-    = Thumbnails
+    = Home (Maybe String)
+    | Thumbnails
     | FullSize FullSizeData
     | NotFound
 
@@ -150,7 +162,7 @@ init flags url key =
         initialModel =
             { key = key
             , viewport = flags.viewport
-            , page = Thumbnails
+            , page = Home Nothing
             , dirListing = NotAsked
             , filterPath = FilterPath "images/" []
             }
@@ -270,6 +282,8 @@ type Msg
     | WindowResize Int Int
     | ClickedLink Browser.UrlRequest
     | ChangedUrl Url
+    | MouseOverLink String
+    | MouseLeaveLink
     | GotDirListing (Result Http.Error DirListing)
     | AddFilter String
     | RemoveFilters Int
@@ -302,6 +316,30 @@ update msg model =
                     toPage model url
             in
             ( { model | page = page }, Cmd.none )
+
+        MouseOverLink x ->
+            let
+                newPage =
+                    case model.page of
+                        Home _ ->
+                            Home (Just x)
+
+                        _ ->
+                            model.page
+            in
+            ( { model | page = newPage }, Cmd.none )
+
+        MouseLeaveLink ->
+            let
+                newPage =
+                    case model.page of
+                        Home _ ->
+                            Home Nothing
+
+                        _ ->
+                            model.page
+            in
+            ( { model | page = newPage }, Cmd.none )
 
         GotDirListing result ->
             let
@@ -388,16 +426,37 @@ view : Model -> Browser.Document Msg
 view model =
     { title = "Andrew Dilmore"
     , body =
-        [ column
-            [ width fill, height fill, spacing 10 ]
-            [ siteHeader
-            , pageContent model
-            , siteFooter
-            ]
-            |> el [ width fill, height fill, withBackground ]
+        [ bodyElement model
             |> Element.layout []
         ]
     }
+
+
+bodyElement : Model -> Element Msg
+bodyElement model =
+    case model.page of
+        Home selected ->
+            homeElement model.viewport selected
+
+        Thumbnails ->
+            usualBody (thumbnailListElement model)
+
+        FullSize data ->
+            usualBody (fullSizeElement model.viewport data)
+
+        NotFound ->
+            text "Not found"
+
+
+usualBody : Element Msg -> Element Msg
+usualBody content =
+    column
+        [ width fill, height fill, spacing 10 ]
+        [ siteHeader
+        , content
+        , siteFooter
+        ]
+        |> el [ width fill, height fill, withBackground ]
 
 
 withBackground : Attribute Msg
@@ -419,19 +478,6 @@ withBackground =
         |> behindContent
 
 
-pageContent : Model -> Element Msg
-pageContent model =
-    case model.page of
-        Thumbnails ->
-            thumbnailListElement model
-
-        FullSize fullSizeData ->
-            fullSizeElement model.viewport fullSizeData
-
-        NotFound ->
-            el [ centerX ] (text "Not found, buddy")
-
-
 siteHeader : Element Msg
 siteHeader =
     row
@@ -441,7 +487,7 @@ siteHeader =
         , paddingXY 2 10
         , Background.color (rgb255 200 200 200)
         ]
-        [ nameElement "Andrew Dilmore"
+        [ nameElement "ANDREW DILMORE"
         ]
 
 
@@ -461,10 +507,12 @@ siteFooter =
 nameElement : String -> Element msg
 nameElement name =
     link
-        [ Font.color (rgb255 0 0 0)
-        , Font.size (scaled 3)
-        , padding 10
-        ]
+        ([ Font.color (rgb255 0 0 0)
+         , Font.size (scaled 3)
+         , padding 10
+         ]
+            ++ futuraBold
+        )
         { label = text name
         , url = homeUrl
         }
@@ -482,6 +530,97 @@ headerButtonElement content =
         { label = text content.title
         , url = content.url
         }
+
+
+
+-- HOME
+
+
+homeElement : Viewport -> Maybe String -> Element Msg
+homeElement viewport selected =
+    row [ height fill, width fill ]
+        [ homeLinkListElement selected
+        , homeDividerElement
+        , homePageGraphicElement viewport
+        ]
+
+
+homeLinkListElement : Maybe String -> Element Msg
+homeLinkListElement selected =
+    column
+        ([ width (fillPortion 1)
+         , centerY
+         , centerX
+         , spacing 40
+         , Font.size (scaled 5)
+         ]
+            ++ futuraMedium
+        )
+        [ homeLinkElement "Portfolio" thumbnailsUrl selected
+        , homeLinkElement "About" aboutUrl selected
+        , homeLinkElement "Resume" resumeUrl selected
+        ]
+
+
+homeLinkElement : String -> String -> Maybe String -> Element Msg
+homeLinkElement linkName url selected =
+    let
+        fontAttributes =
+            if Just linkName == selected then
+                futuraBold
+
+            else
+                futuraMedium
+    in
+    link ([] ++ fontAttributes)
+        { url = url
+        , label = text linkName
+        }
+        |> el
+            [ centerX
+            , Events.onMouseEnter (MouseOverLink linkName)
+            , Events.onMouseLeave MouseLeaveLink
+            ]
+
+
+homeDividerElement : Element msg
+homeDividerElement =
+    el [ height fill, width (px 5), Background.color colors.black ] none
+
+
+homePageGraphicElement : Viewport -> Element msg
+homePageGraphicElement viewport =
+    image
+        [ centerY
+        , centerX
+        , height (fill |> maximum viewport.height)
+        ]
+        { src = assetUrl "HomePageGraphic.png"
+        , description = ""
+        }
+        |> el
+            [ width (fillPortion 2)
+            , height (fill |> maximum viewport.height)
+            , withHomeName
+            ]
+
+
+withHomeName : Attribute msg
+withHomeName =
+    [ paragraph [ centerX, Font.center ] [ text "ANDREW" ]
+    , paragraph [ centerX, Font.center ] [ text "DILMORE" ]
+    ]
+        |> textColumn
+            ([ alignBottom
+             , centerX
+             , moveUp 20
+             , Font.size (scaled 9)
+             , Font.letterSpacing 10
+             , spacing -25
+             ]
+                ++ futuraBold
+            )
+        |> inFront
 
 
 
@@ -635,6 +774,83 @@ loaderElement =
 
 
 
+-- FONTS
+
+
+futura : Maybe String -> Int -> List (Attribute msg)
+futura postfix weightNumber =
+    let
+        typefaceName =
+            postfix
+                |> Maybe.map (\postfix_ -> "-" ++ postfix_)
+                |> Maybe.withDefault ""
+                |> (\postfix_ -> "futura-pt" ++ postfix_)
+
+        fontWeight =
+            case weightNumber of
+                100 ->
+                    Font.hairline
+
+                200 ->
+                    Font.extraLight
+
+                300 ->
+                    Font.light
+
+                400 ->
+                    Font.regular
+
+                500 ->
+                    Font.medium
+
+                600 ->
+                    Font.semiBold
+
+                700 ->
+                    Font.bold
+
+                800 ->
+                    Font.extraBold
+
+                900 ->
+                    Font.heavy
+
+                _ ->
+                    Font.medium
+    in
+    [ Font.family
+        [ Font.typeface typefaceName
+        , Font.sansSerif
+        ]
+    , fontWeight
+    ]
+
+
+futuraBook =
+    futura Nothing 400
+
+
+futuraMedium =
+    futura Nothing 500
+
+
+futuraHeavy =
+    futura Nothing 700
+
+
+futuraCondensedBook =
+    futura (Just "condensed") 400
+
+
+futuraCondensedBold =
+    futura (Just "condensed") 700
+
+
+futuraBold =
+    futura (Just "bold") 700
+
+
+
 -- REQUESTS ####################################################################
 
 
@@ -652,7 +868,7 @@ decodeDirData : Decode.Decoder DirData
 decodeDirData =
     let
         decodeFiles =
-            Decode.field "files" (Decode.list Decode.string)
+            Decode.field "files" (Decode.map (List.map (\f -> "/" ++ f)) (Decode.list Decode.string))
 
         decodeSubDirs =
             Decode.field "subdirs" (Decode.list Decode.string)
@@ -675,6 +891,7 @@ rowLength =
 
 colors =
     { lightGrey = rgb 0.8 0.8 0.8
+    , black = rgb 0 0 0
     }
 
 
