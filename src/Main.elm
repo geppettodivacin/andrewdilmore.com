@@ -128,6 +128,7 @@ type alias Model =
 type alias Viewport =
     { width : Int
     , height : Int
+    , device : Device
     }
 
 
@@ -156,12 +157,12 @@ type FilterPath
     = FilterPath String (List String)
 
 
-init : { viewport : Viewport } -> Url -> Navigation.Key -> ( Model, Cmd Msg )
+init : { viewport : { width : Int, height : Int } } -> Url -> Navigation.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
         initialModel =
             { key = key
-            , viewport = flags.viewport
+            , viewport = toViewport flags.viewport
             , page = Home Nothing
             , dirListing = NotAsked
             , filterPath = FilterPath "images/" []
@@ -170,6 +171,13 @@ init flags url key =
     ( { initialModel | page = toPage initialModel url }
     , requestDirListing
     )
+
+
+toViewport dimensions =
+    { width = dimensions.width
+    , height = dimensions.height
+    , device = classifyDevice dimensions
+    }
 
 
 
@@ -300,7 +308,14 @@ update msg model =
             ( model, Cmd.none )
 
         WindowResize width height ->
-            ( { model | viewport = { width = width, height = height } }, Cmd.none )
+            let
+                newViewport =
+                    { width = width
+                    , height = height
+                    , device = classifyDevice { width = width, height = height }
+                    }
+            in
+            ( { model | viewport = newViewport }, Cmd.none )
 
         ClickedLink request ->
             case request of
@@ -538,21 +553,55 @@ headerButtonElement content =
 
 homeElement : Viewport -> Maybe String -> Element Msg
 homeElement viewport selected =
+    case viewport.device.orientation of
+        Landscape ->
+            homeDesktopElement viewport selected
+
+        Portrait ->
+            case viewport.device.class of
+                Desktop ->
+                    homeDesktopElement viewport selected
+
+                BigDesktop ->
+                    homeDesktopElement viewport selected
+
+                Phone ->
+                    homeMobileElement viewport selected
+
+                Tablet ->
+                    homeMobileElement viewport selected
+
+
+
+-- Desktop
+
+
+homeDesktopElement : Viewport -> Maybe String -> Element Msg
+homeDesktopElement viewport selected =
     row [ height fill, width fill ]
-        [ homeLinkListElement selected
+        [ homeLinkListElement viewport selected
         , homeDividerElement
         , homePageGraphicElement viewport
         ]
 
 
-homeLinkListElement : Maybe String -> Element Msg
-homeLinkListElement selected =
+homeLinkListElement : Viewport -> Maybe String -> Element Msg
+homeLinkListElement viewport selected =
+    let
+        fontSize =
+            case viewport.device.class of
+                BigDesktop ->
+                    6
+
+                _ ->
+                    5
+    in
     column
         ([ width (fillPortion 1)
          , centerY
          , centerX
          , spacing 40
-         , Font.size (scaled 5)
+         , Font.size (scaled fontSize)
          ]
             ++ futuraMedium
         )
@@ -572,7 +621,7 @@ homeLinkElement linkName url selected =
             else
                 futuraMedium
     in
-    link ([] ++ fontAttributes)
+    link ([ centerX ] ++ fontAttributes)
         { url = url
         , label = text linkName
         }
@@ -580,6 +629,7 @@ homeLinkElement linkName url selected =
             [ centerX
             , Events.onMouseEnter (MouseOverLink linkName)
             , Events.onMouseLeave MouseLeaveLink
+            , width (px 200)
             ]
 
 
@@ -594,19 +644,34 @@ homePageGraphicElement viewport =
         [ centerY
         , centerX
         , height (fill |> maximum viewport.height)
+        , width shrink
         ]
         { src = assetUrl "HomePageGraphic.png"
         , description = ""
         }
         |> el
-            [ width (fillPortion 2)
+            [ width (fillPortion 2 |> maximum viewport.width)
             , height (fill |> maximum viewport.height)
-            , withHomeName
+            , clipX
+            , withHomeName viewport
             ]
 
 
-withHomeName : Attribute msg
-withHomeName =
+withHomeName : Viewport -> Attribute msg
+withHomeName viewport =
+    homeNameElement viewport
+        |> inFront
+
+
+homeNameElement : Viewport -> Element msg
+homeNameElement viewport =
+    let
+        fontSize =
+            break { break = 775, low = 6, high = 7 } viewport.width
+
+        lineSpacing =
+            break { break = 7, low = -15, high = -25 } fontSize
+    in
     [ paragraph [ centerX, Font.center ] [ text "ANDREW" ]
     , paragraph [ centerX, Font.center ] [ text "DILMORE" ]
     ]
@@ -614,13 +679,117 @@ withHomeName =
             ([ alignBottom
              , centerX
              , moveUp 20
-             , Font.size (scaled 9)
+             , Font.size (scaled fontSize)
              , Font.letterSpacing 10
-             , spacing -25
+             , spacing lineSpacing
              ]
                 ++ futuraBold
             )
-        |> inFront
+
+
+
+-- Mobile
+
+
+homeMobileElement : Viewport -> Maybe String -> Element Msg
+homeMobileElement viewport selected =
+    column [ height fill, width fill, withHomeBackground viewport ]
+        [ homeNameMobileElement viewport
+        , homeLinkListMobileElement viewport selected
+        ]
+
+
+withHomeBackground : Viewport -> Attribute msg
+withHomeBackground viewport =
+    image
+        [ centerY
+        , centerX
+        , height (fill |> maximum viewport.height)
+        ]
+        { src = assetUrl "HomePageGraphic.png"
+        , description = ""
+        }
+        |> el
+            [ width fill
+            , moveLeft 10
+            , height (fill |> maximum viewport.height)
+            , clipX
+            ]
+        |> behindContent
+
+
+homeNameMobileElement : Viewport -> Element msg
+homeNameMobileElement viewport =
+    let
+        fontSize =
+            break { break = 500, low = 6, high = 7 } viewport.width
+
+        lineSpacing =
+            break { break = 7, low = -10, high = -25 } fontSize
+    in
+    [ paragraph [ centerX, Font.center ] [ text "ANDREW" ]
+    , paragraph [ centerX, Font.center ] [ text "DILMORE" ]
+    ]
+        |> textColumn
+            ([ alignBottom
+             , width (px viewport.width)
+             , clipX
+             , centerX
+             , moveUp (toFloat ((3 * viewport.height // 20) - 55))
+             , Font.size (scaled fontSize)
+             , Font.letterSpacing 10
+             , spacing lineSpacing
+             ]
+                ++ futuraBold
+            )
+
+
+homeLinkListMobileElement : Viewport -> Maybe String -> Element Msg
+homeLinkListMobileElement viewport selected =
+    column
+        ([ width (fillPortion 1)
+         , centerY
+         , centerX
+         , spacing ((3 * viewport.height // 100) - 11)
+         , Font.size
+            (scaled
+                (break
+                    { break = 700
+                    , low = 5
+                    , high = 6
+                    }
+                    viewport.height
+                )
+            )
+         , moveUp (toFloat ((3 * viewport.height // 50) - 2))
+         ]
+            ++ futuraMedium
+        )
+        [ homeLinkMobileElement "Portfolio" thumbnailsUrl selected
+        , homeLinkMobileElement "About" aboutUrl selected
+        , homeLinkMobileElement "Resume" resumeUrl selected
+        ]
+
+
+homeLinkMobileElement : String -> String -> Maybe String -> Element Msg
+homeLinkMobileElement linkName url selected =
+    let
+        fontAttributes =
+            if Just linkName == selected then
+                futuraBold
+
+            else
+                futuraMedium
+    in
+    link ([] ++ fontAttributes)
+        { url = url
+        , label = text linkName
+        }
+        |> el
+            [ centerX
+            , Events.onMouseEnter (MouseOverLink linkName)
+            , Events.onMouseLeave MouseLeaveLink
+            ]
 
 
 
@@ -764,7 +933,16 @@ fullSizeImageElement viewport data =
 
 scaled : Int -> Int
 scaled =
-    round << modular 16 1.25
+    round << modular 5.5 1.62
+
+
+break : { break : number, high : a, low : a } -> number -> a
+break spec value =
+    if value < spec.break then
+        spec.low
+
+    else
+        spec.high
 
 
 loaderElement : Element msg
