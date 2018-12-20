@@ -523,7 +523,7 @@ nameElement : String -> Element msg
 nameElement name =
     link
         ([ Font.color (rgb255 0 0 0)
-         , Font.size (scaled 3)
+         , Font.size (scaled 4)
          , padding 10
          ]
             ++ futuraBold
