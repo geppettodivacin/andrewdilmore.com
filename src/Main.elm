@@ -553,23 +553,12 @@ headerButtonElement content =
 
 homeElement : Viewport -> Maybe String -> Element Msg
 homeElement viewport selected =
-    case viewport.device.orientation of
-        Landscape ->
+    case classifySimpleDevice viewport.device of
+        FullDesktop ->
             homeDesktopElement viewport selected
 
-        Portrait ->
-            case viewport.device.class of
-                Desktop ->
-                    homeDesktopElement viewport selected
-
-                BigDesktop ->
-                    homeDesktopElement viewport selected
-
-                Phone ->
-                    homeMobileElement viewport selected
-
-                Tablet ->
-                    homeMobileElement viewport selected
+        Mobile ->
+            homeMobileElement viewport selected
 
 
 
@@ -799,6 +788,16 @@ homeLinkMobileElement linkName url selected =
 
 thumbnailListElement : Model -> Element Msg
 thumbnailListElement model =
+    case classifySimpleDevice model.viewport.device of
+        FullDesktop ->
+            thumbnailListDesktopElement model
+
+        Mobile ->
+            thumbnailListDesktopElement model
+
+
+thumbnailListDesktopElement : Model -> Element Msg
+thumbnailListDesktopElement model =
     let
         localLoaderElement =
             loaderElement
@@ -949,6 +948,32 @@ loaderElement : Element msg
 loaderElement =
     Html.div [ Html.Attributes.class "loader loader-bouncing is-active" ] []
         |> Element.html
+
+
+type SimpleDeviceClass
+    = FullDesktop
+    | Mobile
+
+
+classifySimpleDevice : Device -> SimpleDeviceClass
+classifySimpleDevice device =
+    case device.orientation of
+        Landscape ->
+            FullDesktop
+
+        Portrait ->
+            case device.class of
+                Phone ->
+                    Mobile
+
+                Tablet ->
+                    Mobile
+
+                Desktop ->
+                    FullDesktop
+
+                BigDesktop ->
+                    FullDesktop
 
 
 
