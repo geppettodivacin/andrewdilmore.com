@@ -594,23 +594,26 @@ homeLinkListElement viewport selected =
          ]
             ++ futuraMedium
         )
-        [ homeLinkElement "Portfolio" thumbnailsUrl selected
-        , homeLinkElement "About" aboutUrl selected
-        , homeLinkElement "Resume" resumeUrl selected
+        [ homeLinkElement viewport "Portfolio" thumbnailsUrl selected
+        , homeLinkElement viewport "About" aboutUrl selected
+        , homeLinkElement viewport "Resume" resumeUrl selected
         ]
 
 
-homeLinkElement : String -> String -> Maybe String -> Element Msg
-homeLinkElement linkName url selected =
+homeLinkElement : Viewport -> String -> String -> Maybe String -> Element Msg
+homeLinkElement viewport linkName url selected =
     let
+        isSelected =
+            Just linkName == selected
+
         fontAttributes =
-            if Just linkName == selected then
+            if isSelected then
                 futuraBold
 
             else
                 futuraMedium
     in
-    link ([ centerX ] ++ fontAttributes)
+    link ([ centerX ] ++ fontAttributes ++ withHomeLinkArrows viewport isSelected)
         { url = url
         , label = text linkName
         }
@@ -620,6 +623,69 @@ homeLinkElement linkName url selected =
             , Events.onMouseLeave MouseLeaveLink
             , width (px 200)
             ]
+
+
+withHomeLinkArrows : Viewport -> Bool -> List (Attribute Msg)
+withHomeLinkArrows viewport isSelected =
+    let
+        verticalOffset =
+            case viewport.device.class of
+                BigDesktop ->
+                    7
+
+                _ ->
+                    23
+
+        withLeftArrow =
+            image
+                [ rotate 3.14159
+                , moveUp verticalOffset
+                , scale 0.7
+                , centerY
+                ]
+                { src = assetUrl "Rollover_button_1.png", description = "" }
+                |> onLeft
+
+        withRightArrow =
+            image
+                [ moveUp verticalOffset
+                , scale 0.7
+                , centerY
+                ]
+                { src = assetUrl "Rollover_button_2.png", description = "" }
+                |> onRight
+    in
+    if isSelected then
+        [ withLeftArrow, withRightArrow ]
+
+    else
+        []
+
+
+withHomeUnderline : Viewport -> Bool -> Attribute Msg
+withHomeUnderline viewport isSelected =
+    let
+        correctScale =
+            case viewport.device.class of
+                BigDesktop ->
+                    1
+
+                _ ->
+                    0.65
+
+        underlineElement =
+            if isSelected then
+                image
+                    [ centerX
+                    , scale correctScale
+                    ]
+                    { src = assetUrl "Underline.png", description = "" }
+
+            else
+                none
+    in
+    underlineElement
+        |> below
 
 
 homeDividerElement : Element msg
