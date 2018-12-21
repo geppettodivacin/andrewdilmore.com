@@ -733,7 +733,7 @@ homeNameMobileElement viewport =
         |> textColumn
             ([ alignBottom
              , width (px viewport.width)
-             , clipX
+             , clip
              , centerX
              , moveUp (toFloat ((3 * viewport.height // 20) - 55))
              , Font.size (scaled fontSize)
