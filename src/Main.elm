@@ -634,13 +634,21 @@ withHomeLinkArrows viewport isSelected =
                     7
 
                 _ ->
-                    23
+                    19
+
+        correctScale =
+            case viewport.device.class of
+                BigDesktop ->
+                    0.7
+
+                _ ->
+                    0.5
 
         withLeftArrow =
             image
                 [ rotate 3.14159
                 , moveUp verticalOffset
-                , scale 0.7
+                , scale correctScale
                 , centerY
                 ]
                 { src = assetUrl "Rollover_button_1.png", description = "" }
@@ -649,7 +657,7 @@ withHomeLinkArrows viewport isSelected =
         withRightArrow =
             image
                 [ moveUp verticalOffset
-                , scale 0.7
+                , scale correctScale
                 , centerY
                 ]
                 { src = assetUrl "Rollover_button_2.png", description = "" }
