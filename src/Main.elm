@@ -47,7 +47,9 @@ route : Model -> Parser (Page -> a) a
 route model =
     oneOf
         [ Url.map (toFullSizePage model) (s "portfolio" </> s "full" <?> Query.string "image")
-        , Url.map Thumbnails (s "portfolio" </> top)
+        , Url.map makeAbout (s "about" </> top)
+        , Url.map makeResume (s "resume" </> top)
+        , Url.map makeThumbnails (s "portfolio" </> top)
         , Url.map (Home Nothing) top
         ]
 
@@ -61,12 +63,12 @@ toFullSizePage : Model -> Maybe String -> Page
 toFullSizePage model imageSrc =
     case RemoteData.toMaybe model.dirListing of
         Just dirListing ->
-            case Maybe.andThen (makeFullSize dirListing model.filterPath) imageSrc of
+            case Maybe.andThen (makeFullSizeData dirListing model.filterPath) imageSrc of
                 Nothing ->
                     NotFound
 
                 Just data ->
-                    FullSize data
+                    makeFullSize data
 
         Nothing ->
             case imageSrc of
@@ -74,7 +76,27 @@ toFullSizePage model imageSrc =
                     NotFound
 
                 Just existingSrc ->
-                    FullSize (SelectList.singleton existingSrc)
+                    makeFullSize (SelectList.singleton existingSrc)
+
+
+makeHeaderState selected =
+    { selected = selected, hovered = Nothing }
+
+
+makeAbout =
+    About (makeHeaderState "About")
+
+
+makeResume =
+    Resume (makeHeaderState "Resume")
+
+
+makeThumbnails =
+    Thumbnails (makeHeaderState "Portfolio")
+
+
+makeFullSize =
+    FullSize (makeHeaderState "Portfolio")
 
 
 homeUrl : String
@@ -134,9 +156,17 @@ type alias Viewport =
 
 type Page
     = Home (Maybe String)
-    | Thumbnails
-    | FullSize FullSizeData
+    | About HeaderState
+    | Resume HeaderState
+    | Thumbnails HeaderState
+    | FullSize HeaderState FullSizeData
     | NotFound
+
+
+type alias HeaderState =
+    { selected : String
+    , hovered : Maybe String
+    }
 
 
 type alias FullSizeData =
@@ -236,8 +266,8 @@ removeFilter count filterPath =
             FilterPath root (List.drop count filterList)
 
 
-makeFullSize : DirListing -> FilterPath -> String -> Maybe FullSizeData
-makeFullSize listing filter current =
+makeFullSizeData : DirListing -> FilterPath -> String -> Maybe FullSizeData
+makeFullSizeData listing filter current =
     let
         doThing ( start, end ) =
             case end of
@@ -332,27 +362,17 @@ update msg model =
             in
             ( { model | page = page }, Cmd.none )
 
-        MouseOverLink x ->
+        MouseOverLink newHovered ->
             let
                 newPage =
-                    case model.page of
-                        Home _ ->
-                            Home (Just x)
-
-                        _ ->
-                            model.page
+                    updateHovered (Just newHovered) model.page
             in
             ( { model | page = newPage }, Cmd.none )
 
         MouseLeaveLink ->
             let
                 newPage =
-                    case model.page of
-                        Home _ ->
-                            Home Nothing
-
-                        _ ->
-                            model.page
+                    updateHovered Nothing model.page
             in
             ( { model | page = newPage }, Cmd.none )
 
@@ -366,7 +386,7 @@ update msg model =
 
                 newPage =
                     case newModel.page of
-                        FullSize dirListing ->
+                        FullSize _ dirListing ->
                             toFullSizePage
                                 newModel
                                 (Just (SelectList.selected dirListing))
@@ -391,13 +411,13 @@ update msg model =
 
         NextImage ->
             case model.page of
-                FullSize data ->
+                FullSize _ data ->
                     let
                         ( newData, cmd ) =
                             nextImage model.key data
 
                         newPage =
-                            FullSize newData
+                            makeFullSize newData
                     in
                     ( { model | page = newPage }, cmd )
 
@@ -406,13 +426,13 @@ update msg model =
 
         PrevImage ->
             case model.page of
-                FullSize data ->
+                FullSize _ data ->
                     let
                         ( newData, cmd ) =
                             prevImage model.key data
 
                         newPage =
-                            FullSize newData
+                            makeFullSize newData
                     in
                     ( { model | page = newPage }, cmd )
 
@@ -420,7 +440,29 @@ update msg model =
                     ( model, Cmd.none )
 
         CloseImage ->
-            ( { model | page = Thumbnails }, Cmd.none )
+            ( model, Navigation.pushUrl model.key thumbnailsUrl )
+
+
+updateHovered : Maybe String -> Page -> Page
+updateHovered hovered page =
+    case page of
+        Home _ ->
+            Home hovered
+
+        About headerState ->
+            About { headerState | hovered = hovered }
+
+        Resume headerState ->
+            Resume { headerState | hovered = hovered }
+
+        Thumbnails headerState ->
+            Thumbnails { headerState | hovered = hovered }
+
+        FullSize headerState data ->
+            FullSize { headerState | hovered = hovered } data
+
+        NotFound ->
+            page
 
 
 
@@ -453,21 +495,27 @@ bodyElement model =
         Home selected ->
             homeElement model.viewport selected
 
-        Thumbnails ->
-            usualBody (thumbnailListElement model)
+        About headerState ->
+            usualBody headerState none
 
-        FullSize data ->
-            usualBody (fullSizeElement model.viewport data)
+        Resume headerState ->
+            usualBody headerState none
+
+        Thumbnails headerState ->
+            usualBody headerState (thumbnailListElement model)
+
+        FullSize headerState data ->
+            usualBody headerState (fullSizeElement model.viewport data)
 
         NotFound ->
             text "Not found"
 
 
-usualBody : Element Msg -> Element Msg
-usualBody content =
+usualBody : HeaderState -> Element Msg -> Element Msg
+usualBody headerState content =
     column
         [ width fill, height fill, spacing 10 ]
-        [ siteHeader
+        [ siteHeader headerState
         , content
         , siteFooter
         ]
@@ -493,16 +541,17 @@ withBackground =
         |> behindContent
 
 
-siteHeader : Element Msg
-siteHeader =
-    row
-        [ alignTop
-        , width fill
-        , spacing 10
-        , paddingXY 2 10
-        , Background.color (rgb255 200 200 200)
-        ]
+siteHeader : HeaderState -> Element Msg
+siteHeader headerState =
+    column
+        [ centerX ]
         [ nameElement "ANDREW DILMORE"
+        , [ { title = "Portfolio", url = thumbnailsUrl }
+          , { title = "About", url = aboutUrl }
+          , { title = "Resume", url = resumeUrl }
+          ]
+            |> List.map (headerLinkElement headerState)
+            |> row [ centerX, spacing 10 ]
         ]
 
 
@@ -523,8 +572,9 @@ nameElement : String -> Element msg
 nameElement name =
     link
         ([ Font.color (rgb255 0 0 0)
-         , Font.size (scaled 4)
+         , Font.size (scaled 5)
          , padding 10
+         , centerX
          ]
             ++ futuraBold
         )
@@ -533,14 +583,31 @@ nameElement name =
         }
 
 
-headerButtonElement : { title : String, url : String } -> Element msg
-headerButtonElement content =
+headerLinkElement : HeaderState -> { title : String, url : String } -> Element Msg
+headerLinkElement headerState content =
+    let
+        isSelected =
+            content.title == headerState.selected
+
+        isHovered =
+            Just content.title == headerState.hovered
+
+        fontColor =
+            if isHovered then
+                colors.black
+
+            else if isSelected then
+                colors.paintPurple
+
+            else
+                colors.darkGray
+    in
     link
-        [ Background.color (rgb255 100 100 100)
-        , Font.color (rgb255 255 255 255)
-        , Border.rounded 3
-        , Font.size (scaled 2)
+        [ Border.rounded 3
+        , Font.color fontColor
         , padding 10
+        , Events.onMouseEnter (MouseOverLink content.title)
+        , Events.onMouseLeave MouseLeaveLink
         ]
         { label = text content.title
         , url = content.url
@@ -670,22 +737,15 @@ withHomeLinkArrows viewport isSelected =
         []
 
 
-withHomeUnderline : Viewport -> Bool -> Attribute Msg
-withHomeUnderline viewport isSelected =
+withHomeUnderline : Bool -> Attribute Msg
+withHomeUnderline isSelected =
     let
-        correctScale =
-            case viewport.device.class of
-                BigDesktop ->
-                    1
-
-                _ ->
-                    0.65
-
         underlineElement =
             if isSelected then
                 image
                     [ centerX
-                    , scale correctScale
+                    , width (px 150)
+                    , moveUp 10
                     ]
                     { src = assetUrl "Underline.png", description = "" }
 
@@ -1167,7 +1227,9 @@ rowLength =
 
 
 colors =
-    { lightGrey = rgb 0.8 0.8 0.8
+    { lightGray = rgb 0.8 0.8 0.8
+    , darkGray = rgb 0.5 0.5 0.5
+    , paintPurple = rgb255 136 49 227
     , black = rgb 0 0 0
     }
 
