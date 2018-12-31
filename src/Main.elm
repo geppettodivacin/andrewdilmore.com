@@ -150,6 +150,8 @@ type alias Model =
 type alias Viewport =
     { width : Int
     , height : Int
+    , sceneWidth : Int
+    , sceneHeight : Int
     , device : Device
     }
 
@@ -200,13 +202,18 @@ init flags url key =
             }
     in
     ( { initialModel | page = toPage initialModel url }
-    , requestDirListing
+    , Cmd.batch
+        [ requestDirListing
+        , requestScene
+        ]
     )
 
 
 toViewport dimensions =
     { width = dimensions.width
     , height = dimensions.height
+    , sceneWidth = dimensions.width
+    , sceneHeight = dimensions.height
     , device = classifyDevice dimensions
     }
 
@@ -319,6 +326,7 @@ prevImage key data =
 type Msg
     = NoOp
     | WindowResize Int Int
+    | SceneResize Int Int
     | ClickedLink Browser.UrlRequest
     | ChangedUrl Url
     | MouseOverLink String
@@ -345,10 +353,24 @@ update msg model =
                 newViewport =
                     { width = width
                     , height = height
+                    , sceneWidth = model.viewport.sceneWidth
+                    , sceneHeight = model.viewport.sceneHeight
                     , device = classifyDevice { width = width, height = height }
                     }
             in
-            ( { model | viewport = newViewport }, Cmd.none )
+            ( { model | viewport = newViewport }, requestScene )
+
+        SceneResize width height ->
+            let
+                newViewport =
+                    { width = model.viewport.width
+                    , height = model.viewport.height
+                    , sceneWidth = width
+                    , sceneHeight = height
+                    , device = model.viewport.device
+                    }
+            in
+            ( { model | viewport = Debug.log "scene change" newViewport }, Cmd.none )
 
         ClickedLink request ->
             case request of
@@ -362,8 +384,17 @@ update msg model =
             let
                 page =
                     toPage model url
+
+                oldViewport =
+                    model.viewport
+
+                newViewport =
+                    { oldViewport
+                        | sceneWidth = oldViewport.width
+                        , sceneHeight = oldViewport.height
+                    }
             in
-            ( { model | page = page }, Cmd.none )
+            ( { model | page = page }, requestScene )
 
         MouseOverLink newHovered ->
             let
@@ -561,11 +592,11 @@ usualBody viewport headerState content =
         , content
         , siteFooter
         ]
-        |> el [ width fill, height fill, withBackground ]
+        |> el [ width fill, height fill, withBackground viewport ]
 
 
-withBackground : Attribute Msg
-withBackground =
+withBackground : Viewport -> Attribute Msg
+withBackground viewport =
     let
         leftImage =
             image [ alignLeft ]
@@ -574,13 +605,39 @@ withBackground =
         rightImage =
             image [ alignRight ]
                 { description = "", src = assetUrl "backgroundSide0.png" }
+
+        mirrorLeftImage =
+            image [ alignLeft, alignBottom, scale -1 ]
+                { description = "", src = assetUrl "backgroundSide0.png" }
+
+        mirrorRightImage =
+            image [ alignRight, alignBottom, scale -1 ]
+                { description = "", src = assetUrl "backgroundSide1.png" }
+
+        uprightRow =
+            row
+                -- Keep maximum until you can find bug pushing background down on
+                -- portfolio
+                [ height (fill |> maximum 685), width fill, clip ]
+                [ leftImage
+                , rightImage
+                ]
+
+        mirrorRow =
+            if viewport.sceneHeight >= 1400 then
+                row
+                    [ alignBottom, height (fill |> maximum 685), width fill, clip ]
+                    [ mirrorLeftImage
+                    , mirrorRightImage
+                    ]
+
+            else
+                none
     in
-    row
-        -- Keep maximum until you can find bug pushing background down on
-        -- portfolio
-        [ height (fill |> maximum 685), width fill, clip ]
-        [ leftImage
-        , rightImage
+    column
+        [ height fill, width fill ]
+        [ uprightRow
+        , mirrorRow
         ]
         |> behindContent
 
@@ -1398,6 +1455,17 @@ decodeDirData =
             Decode.field "subdirs" (Decode.list Decode.string)
     in
     Decode.map2 DirData decodeFiles decodeSubDirs
+
+
+requestScene : Cmd Msg
+requestScene =
+    Task.perform
+        (\viewport ->
+            SceneResize
+                (round viewport.scene.width)
+                (round viewport.scene.height)
+        )
+        Dom.getViewport
 
 
 
