@@ -517,7 +517,6 @@ usualBody headerState content =
         [ width fill, height fill, spacing 10 ]
         [ siteHeader headerState
         , content
-        , siteFooter
         ]
         |> el [ width fill, height fill, withBackground ]
 
@@ -526,15 +525,17 @@ withBackground : Attribute Msg
 withBackground =
     let
         leftImage =
-            image [ alignLeft, moveLeft 260 ]
-                { description = "", src = assetUrl "backgroundSide.png" }
+            image [ alignLeft ]
+                { description = "", src = assetUrl "backgroundSide1.png" }
 
         rightImage =
-            image [ alignRight, moveRight 260 ]
-                { description = "", src = assetUrl "backgroundSide.png" }
+            image [ alignRight ]
+                { description = "", src = assetUrl "backgroundSide0.png" }
     in
     row
-        [ height (fill |> maximum 600), width fill, clip ]
+        -- Keep maximum until you can find bug pushing background down on
+        -- portfolio
+        [ height (fill |> maximum 685), width fill, clip ]
         [ leftImage
         , rightImage
         ]
