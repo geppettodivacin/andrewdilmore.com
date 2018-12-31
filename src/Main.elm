@@ -496,26 +496,29 @@ bodyElement model =
             homeElement model.viewport selected
 
         About headerState ->
-            usualBody headerState (aboutElement model.viewport)
+            usualBody model.viewport headerState (aboutElement model.viewport)
 
         Resume headerState ->
-            usualBody headerState none
+            usualBody model.viewport headerState none
 
         Thumbnails headerState ->
-            usualBody headerState (thumbnailListElement model)
+            usualBody model.viewport headerState (thumbnailListElement model)
 
         FullSize headerState data ->
-            usualBody headerState (fullSizeElement model.viewport data)
+            usualBody
+                model.viewport
+                headerState
+                (fullSizeElement model.viewport data)
 
         NotFound ->
             text "Not found"
 
 
-usualBody : HeaderState -> Element Msg -> Element Msg
-usualBody headerState content =
+usualBody : Viewport -> HeaderState -> Element Msg -> Element Msg
+usualBody viewport headerState content =
     column
         [ width fill, height fill, spacing 10 ]
-        [ siteHeader headerState
+        [ siteHeader viewport headerState
         , content
         ]
         |> el [ width fill, height fill, withBackground ]
@@ -542,10 +545,10 @@ withBackground =
         |> behindContent
 
 
-siteHeader : HeaderState -> Element Msg
-siteHeader headerState =
+siteHeader : Viewport -> HeaderState -> Element Msg
+siteHeader viewport headerState =
     column
-        [ centerX ]
+        [ centerX, padding 20 ]
         [ nameElement "ANDREW DILMORE"
         , [ { title = "Portfolio", url = thumbnailsUrl }
           , { title = "About", url = aboutUrl }
@@ -553,7 +556,21 @@ siteHeader headerState =
           ]
             |> List.map (headerLinkElement headerState)
             |> row [ centerX, spacing 10 ]
+        , headerDividerElement viewport
         ]
+
+
+headerDividerElement : Viewport -> Element Msg
+headerDividerElement viewport =
+    let
+        dividerWidth =
+            viewport.width - 750
+
+        dividerHeight =
+            5
+    in
+    image [ padding 3, height (px dividerHeight), width (px dividerWidth) ]
+        { src = assetUrl "gradient.svg", description = "" }
 
 
 siteFooter : Element Msg
@@ -574,7 +591,6 @@ nameElement name =
     link
         ([ Font.color (rgb255 0 0 0)
          , Font.size (scaled 5)
-         , padding 10
          , centerX
          ]
             ++ futuraBold
