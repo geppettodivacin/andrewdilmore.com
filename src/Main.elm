@@ -520,6 +520,7 @@ usualBody viewport headerState content =
         [ width fill, height fill, spacing 10 ]
         [ siteHeader viewport headerState
         , content
+        , siteFooter
         ]
         |> el [ width fill, height fill, withBackground ]
 
@@ -578,9 +579,6 @@ siteFooter =
     el
         [ alignBottom
         , width fill
-        , spacing 10
-        , paddingXY 2 10
-        , Background.color (rgb255 200 200 200)
         , height (px 30)
         ]
         Element.none
@@ -1114,64 +1112,66 @@ fullSizeElement : Viewport -> FullSizeData -> Element Msg
 fullSizeElement viewport data =
     let
         leftArrow =
-            text "<"
-                |> el [ centerY, centerX ]
-                |> el
-                    [ Font.size (scaled 5)
-                    , Events.onClick PrevImage
-                    , alignLeft
-                    , height fill
-                    , width (px 50)
-                    , pointer
-                    , alpha 0.5
-                    , mouseOver [ alpha 0.7 ]
-                    ]
+            if not (SelectList.isHead data) then
+                text "<"
+                    |> el [ centerY, centerX ]
+                    |> el
+                        [ Font.size (scaled 5)
+                        , Events.onClick PrevImage
+                        , alignLeft
+                        , height fill
+                        , width (px 50)
+                        , pointer
+                        , alpha 0.5
+                        , mouseOver [ alpha 0.7 ]
+                        ]
+
+            else
+                none
 
         rightArrow =
-            text ">"
-                |> el [ centerY, centerX ]
-                |> el
-                    [ Font.size (scaled 5)
-                    , Events.onClick NextImage
-                    , alignRight
-                    , height fill
-                    , width (px 50)
-                    , pointer
-                    , alpha 0.5
-                    , mouseOver [ alpha 0.7 ]
-                    ]
+            if not (SelectList.isLast data) then
+                text ">"
+                    |> el [ centerY, centerX ]
+                    |> el
+                        [ Font.size (scaled 5)
+                        , Events.onClick NextImage
+                        , alignRight
+                        , height fill
+                        , width (px 50)
+                        , pointer
+                        , alpha 0.5
+                        , mouseOver [ alpha 0.7 ]
+                        ]
+
+            else
+                none
+
+        arrowsRow =
+            row [ width fill, height fill ]
+                [ leftArrow
+                , rightArrow
+                ]
     in
-    row
-        [ centerX
-        , width fill
-        , height fill
-        ]
-        [ if not (SelectList.isHead data) then
-            leftArrow
-
-          else
-            none
-        , fullSizeImageElement viewport data
-        , if not (SelectList.isLast data) then
-            rightArrow
-
-          else
-            none
-        ]
-        |> el [ width fill, height fill ]
+    fullSizeImageElement viewport data
+        |> el
+            [ centerX
+            , width fill
+            , height fill
+            , arrowsRow |> behindContent
+            ]
 
 
 fullSizeImageElement : Viewport -> FullSizeData -> Element Msg
 fullSizeImageElement viewport data =
     image
         [ width (shrink |> maximum (viewport.width - 614))
-        , height (shrink |> maximum (viewport.height - 125))
-        , centerX
+        , height (shrink |> maximum (viewport.height - 200))
         ]
         { src = SelectList.selected data
         , description = ""
         }
-        |> (\img -> link [ centerX ] { label = img, url = thumbnailsUrl })
+        |> (\img -> link [ centerX, centerY ] { label = img, url = thumbnailsUrl })
 
 
 
