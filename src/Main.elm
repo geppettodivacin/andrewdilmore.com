@@ -496,7 +496,7 @@ bodyElement model =
             homeElement model.viewport selected
 
         About headerState ->
-            usualBody headerState none
+            usualBody headerState (aboutElement model.viewport)
 
         Resume headerState ->
             usualBody headerState none
@@ -913,6 +913,25 @@ homeLinkMobileElement linkName url selected =
             , Events.onMouseEnter (MouseOverLink linkName)
             , Events.onMouseLeave MouseLeaveLink
             ]
+
+
+
+-- ABOUT
+
+
+aboutElement : Viewport -> Element Msg
+aboutElement viewport =
+    textColumn [ centerX, width (px <| viewport.width - 700) ]
+        [ paragraph [] [ loremIpsum ] ]
+
+
+loremIpsum : Element msg
+loremIpsum =
+    text
+        """
+        Lorem ipsum dolores ex machina edis lorn mortis und potentia lule
+        masoltav ender olga jager juno obvia
+        """
 
 
 
