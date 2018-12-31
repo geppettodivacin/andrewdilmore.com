@@ -653,14 +653,14 @@ contactInfoElement displayContact =
                 [ text "andrewdilmore@gmail.com"
                 , text "337-936-2652"
                 ]
-                    |> column [ paddingXY 0 5 ]
+                    |> column [ paddingXY 0 5, Font.size (scaled 3) ]
 
             else
                 none
     in
     text "Contact"
         |> el
-            ([ Font.size (scaled 3)
+            ([ Font.size (scaled 4)
              , moveRight 10
              , alignBottom
              , Events.onMouseEnter EnterContact
