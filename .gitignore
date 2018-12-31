@@ -1,5 +1,6 @@
 elm-stuff
 elm.js
 .cs_files
-*.png
-*.jpg
+assets/
+images/
+portfolio/
