@@ -922,17 +922,95 @@ homeLinkMobileElement linkName url selected =
 
 aboutElement : Viewport -> Element Msg
 aboutElement viewport =
-    textColumn [ centerX, width (px <| viewport.width - 700) ]
-        [ paragraph [] [ loremIpsum ] ]
+    aboutParagraphElements
+        |> textColumn
+            ([ centerX
+             , width (px <| viewport.width - 700)
+             , spacing 30
+             , Font.size (scaled 4)
+             ]
+                ++ futuraBook
+            )
 
 
-loremIpsum : Element msg
-loremIpsum =
-    text
+aboutParagraphElements =
+    let
+        toParagraph attributes paragraphText =
+            paragraphText
+                |> text
+                |> List.singleton
+                |> paragraph attributes
+    in
+    [ [ """
+        I started learning creativity at an early age. Most people do,
+        somewhere between the sticky glue-covered hands and eating Play-Doh.
         """
-        Lorem ipsum dolores ex machina edis lorn mortis und potentia lule
-        masoltav ender olga jager juno obvia
+            |> text
+      , """
+        "Music, writing, and art have inspired me greatly throughout my life
+        and influence who I am as a person,"
         """
+            |> text
+            |> el [ Font.italic ]
+      , """
+        is what everyone writes on their
+        cover letters, and I'm no exception to the rule. But we're not here to
+        talk about what makes me similar to your other applicants.
+        """
+            |> text
+      ]
+        |> paragraph [ width fill ]
+        |> List.singleton
+        |> textColumn [ width fill ]
+    , [ "We want to know"
+            |> toParagraph []
+      , "WHAT MAKES ME DIFFERENT FROM EVERYONE ELSE?"
+            |> toParagraph [ Font.size (scaled 5) ]
+      ]
+        |> textColumn [ width fill ]
+    , """
+    After high school, I started working on a degree for Industrial Technology.
+    I spent four years expecting to join an industrial firm and work on
+    blueprints for a living. During that time, I went through multiple
+    depressive states, and I learned more about myself than I ever would have
+    learned about welding and OSHA. I would never be able to put my best foot
+    forward in a career path I consider to be just "okay."
+    """
+        |> toParagraph []
+    , """
+    You cannot truly be satisfied with the work you accomplish if you don't
+    truly love the work you do.
+    """
+        |> toParagraph ([ Font.size (scaled 5) ] ++ futuraHeavy)
+    , [ """
+        After a year of soul searching, I dedicated myself to a career path in art
+        and graphic design. My GPA and mental state instantly improved, and I've
+        now graduated with a BA in Art. I've spent the last year focusing on
+        typography, layout, photography, and photo composition. My images have
+        appeared in official McNeese State University publications as well as in
+        """
+            |> text
+      , "American Press" |> text |> el [ Font.italic ]
+      , "," |> text
+      , "Thrive" |> text |> el [ Font.italic ]
+      , ","
+            |> text
+      , """
+        and the Lake Charles Southwest Louisiana Convention and Visitors Bureau
+        website.
+        """
+            |> text
+      ]
+        |> paragraph []
+        |> List.singleton
+        |> textColumn [ width fill ]
+    , """
+    Please take a look at my portfolio. If you feel I would be a good fit for
+    your company, my contact info is listed in the header. Give me a call —
+    shoot me an email! I look forward to hearing from you.
+    """
+        |> toParagraph []
+    ]
 
 
 
