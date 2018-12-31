@@ -442,7 +442,7 @@ update msg model =
                         _ ->
                             newModel.page
             in
-            ( { newModel | page = newPage }, Cmd.none )
+            ( { newModel | page = newPage }, requestScene )
 
         AddFilter newFilter ->
             ( model, Cmd.none )
@@ -624,7 +624,7 @@ withBackground viewport =
                 ]
 
         mirrorRow =
-            if viewport.sceneHeight >= 1400 then
+            if Debug.log "current scene" viewport.sceneHeight >= 1400 then
                 row
                     [ alignBottom, height (fill |> maximum 685), width fill, clip ]
                     [ mirrorLeftImage
@@ -718,7 +718,7 @@ contactInfoElement displayContact =
     text "Contact"
         |> el
             ([ Font.size (scaled 4)
-             , moveRight 10
+             , moveRight 19
              , alignBottom
              , Events.onMouseEnter EnterContact
              , Events.onMouseLeave LeaveContact
