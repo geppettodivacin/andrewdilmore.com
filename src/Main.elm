@@ -570,7 +570,12 @@ headerDividerElement viewport =
         dividerHeight =
             5
     in
-    image [ padding 3, height (px dividerHeight), width (px dividerWidth) ]
+    image
+        [ padding 3
+        , height (px dividerHeight)
+        , width (px dividerWidth)
+        , centerX
+        ]
         { src = assetUrl "gradient.svg", description = "" }
 
 
