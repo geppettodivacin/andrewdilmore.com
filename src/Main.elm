@@ -80,7 +80,7 @@ toFullSizePage model imageSrc =
 
 
 makeHeaderState selected =
-    { selected = selected, hovered = Nothing }
+    { selected = selected, hovered = Nothing, displayContact = False }
 
 
 makeAbout =
@@ -166,6 +166,7 @@ type Page
 type alias HeaderState =
     { selected : String
     , hovered : Maybe String
+    , displayContact : Bool
     }
 
 
@@ -322,6 +323,8 @@ type Msg
     | ChangedUrl Url
     | MouseOverLink String
     | MouseLeaveLink
+    | EnterContact
+    | LeaveContact
     | GotDirListing (Result Http.Error DirListing)
     | AddFilter String
     | RemoveFilters Int
@@ -373,6 +376,20 @@ update msg model =
             let
                 newPage =
                     updateHovered Nothing model.page
+            in
+            ( { model | page = newPage }, Cmd.none )
+
+        EnterContact ->
+            let
+                newPage =
+                    updateDisplayContact True model.page
+            in
+            ( { model | page = newPage }, Cmd.none )
+
+        LeaveContact ->
+            let
+                newPage =
+                    updateDisplayContact False model.page
             in
             ( { model | page = newPage }, Cmd.none )
 
@@ -465,6 +482,28 @@ updateHovered hovered page =
             page
 
 
+updateDisplayContact : Bool -> Page -> Page
+updateDisplayContact displayContact page =
+    case page of
+        Home _ ->
+            page
+
+        About headerState ->
+            About { headerState | displayContact = displayContact }
+
+        Resume headerState ->
+            Resume { headerState | displayContact = displayContact }
+
+        Thumbnails headerState ->
+            Thumbnails { headerState | displayContact = displayContact }
+
+        FullSize headerState data ->
+            FullSize { headerState | displayContact = displayContact } data
+
+        NotFound ->
+            page
+
+
 
 -- SUBSCRIPTIONS ###############################################################
 
@@ -550,7 +589,7 @@ siteHeader : Viewport -> HeaderState -> Element Msg
 siteHeader viewport headerState =
     column
         [ centerX, padding 20 ]
-        [ nameElement "ANDREW DILMORE"
+        [ nameElement "ANDREW DILMORE" headerState.displayContact
         , [ { title = "Portfolio", url = thumbnailsUrl }
           , { title = "About", url = aboutUrl }
           , { title = "Resume", url = resumeUrl }
@@ -589,18 +628,47 @@ siteFooter =
         Element.none
 
 
-nameElement : String -> Element msg
-nameElement name =
+nameElement : String -> Bool -> Element Msg
+nameElement name displayContact =
     link
         ([ Font.color (rgb255 0 0 0)
          , Font.size (scaled 5)
-         , centerX
          ]
             ++ futuraBold
         )
         { label = text name
         , url = homeUrl
         }
+        |> el
+            [ centerX
+            , contactInfoElement displayContact |> onRight
+            ]
+
+
+contactInfoElement : Bool -> Element Msg
+contactInfoElement displayContact =
+    let
+        contactElement =
+            if displayContact then
+                [ text "andrewdilmore@gmail.com"
+                , text "337-936-2652"
+                ]
+                    |> column [ paddingXY 0 5 ]
+
+            else
+                none
+    in
+    text "Contact"
+        |> el
+            ([ Font.size (scaled 3)
+             , moveRight 10
+             , alignBottom
+             , Events.onMouseEnter EnterContact
+             , Events.onMouseLeave LeaveContact
+             , contactElement |> below
+             ]
+                ++ futuraMedium
+            )
 
 
 headerLinkElement : HeaderState -> { title : String, url : String } -> Element Msg
