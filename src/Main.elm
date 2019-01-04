@@ -80,7 +80,7 @@ toFullSizePage model imageSrc =
 
 
 makeHeaderState selected =
-    { selected = selected, hovered = Nothing }
+    { selected = selected, hovered = Nothing, displayContact = False }
 
 
 makeAbout =
@@ -150,6 +150,8 @@ type alias Model =
 type alias Viewport =
     { width : Int
     , height : Int
+    , sceneWidth : Int
+    , sceneHeight : Int
     , device : Device
     }
 
@@ -166,6 +168,7 @@ type Page
 type alias HeaderState =
     { selected : String
     , hovered : Maybe String
+    , displayContact : Bool
     }
 
 
@@ -199,13 +202,18 @@ init flags url key =
             }
     in
     ( { initialModel | page = toPage initialModel url }
-    , requestDirListing
+    , Cmd.batch
+        [ requestDirListing
+        , requestScene
+        ]
     )
 
 
 toViewport dimensions =
     { width = dimensions.width
     , height = dimensions.height
+    , sceneWidth = dimensions.width
+    , sceneHeight = dimensions.height
     , device = classifyDevice dimensions
     }
 
@@ -318,10 +326,13 @@ prevImage key data =
 type Msg
     = NoOp
     | WindowResize Int Int
+    | SceneResize Int Int
     | ClickedLink Browser.UrlRequest
     | ChangedUrl Url
     | MouseOverLink String
     | MouseLeaveLink
+    | EnterContact
+    | LeaveContact
     | GotDirListing (Result Http.Error DirListing)
     | AddFilter String
     | RemoveFilters Int
@@ -342,10 +353,24 @@ update msg model =
                 newViewport =
                     { width = width
                     , height = height
+                    , sceneWidth = model.viewport.sceneWidth
+                    , sceneHeight = model.viewport.sceneHeight
                     , device = classifyDevice { width = width, height = height }
                     }
             in
-            ( { model | viewport = newViewport }, Cmd.none )
+            ( { model | viewport = newViewport }, requestScene )
+
+        SceneResize width height ->
+            let
+                newViewport =
+                    { width = model.viewport.width
+                    , height = model.viewport.height
+                    , sceneWidth = width
+                    , sceneHeight = height
+                    , device = model.viewport.device
+                    }
+            in
+            ( { model | viewport = Debug.log "scene change" newViewport }, Cmd.none )
 
         ClickedLink request ->
             case request of
@@ -359,8 +384,17 @@ update msg model =
             let
                 page =
                     toPage model url
+
+                oldViewport =
+                    model.viewport
+
+                newViewport =
+                    { oldViewport
+                        | sceneWidth = oldViewport.width
+                        , sceneHeight = oldViewport.height
+                    }
             in
-            ( { model | page = page }, Cmd.none )
+            ( { model | page = page }, requestScene )
 
         MouseOverLink newHovered ->
             let
@@ -373,6 +407,20 @@ update msg model =
             let
                 newPage =
                     updateHovered Nothing model.page
+            in
+            ( { model | page = newPage }, Cmd.none )
+
+        EnterContact ->
+            let
+                newPage =
+                    updateDisplayContact True model.page
+            in
+            ( { model | page = newPage }, Cmd.none )
+
+        LeaveContact ->
+            let
+                newPage =
+                    updateDisplayContact False model.page
             in
             ( { model | page = newPage }, Cmd.none )
 
@@ -394,7 +442,7 @@ update msg model =
                         _ ->
                             newModel.page
             in
-            ( { newModel | page = newPage }, Cmd.none )
+            ( { newModel | page = newPage }, requestScene )
 
         AddFilter newFilter ->
             ( model, Cmd.none )
@@ -465,6 +513,28 @@ updateHovered hovered page =
             page
 
 
+updateDisplayContact : Bool -> Page -> Page
+updateDisplayContact displayContact page =
+    case page of
+        Home _ ->
+            page
+
+        About headerState ->
+            About { headerState | displayContact = displayContact }
+
+        Resume headerState ->
+            Resume { headerState | displayContact = displayContact }
+
+        Thumbnails headerState ->
+            Thumbnails { headerState | displayContact = displayContact }
+
+        FullSize headerState data ->
+            FullSize { headerState | displayContact = displayContact } data
+
+        NotFound ->
+            page
+
+
 
 -- SUBSCRIPTIONS ###############################################################
 
@@ -522,11 +592,11 @@ usualBody viewport headerState content =
         , content
         , siteFooter
         ]
-        |> el [ width fill, height fill, withBackground ]
+        |> el [ width fill, height fill, withBackground viewport ]
 
 
-withBackground : Attribute Msg
-withBackground =
+withBackground : Viewport -> Attribute Msg
+withBackground viewport =
     let
         leftImage =
             image [ alignLeft ]
@@ -535,13 +605,39 @@ withBackground =
         rightImage =
             image [ alignRight ]
                 { description = "", src = assetUrl "backgroundSide0.png" }
+
+        mirrorLeftImage =
+            image [ alignLeft, alignBottom, scale -1 ]
+                { description = "", src = assetUrl "backgroundSide0.png" }
+
+        mirrorRightImage =
+            image [ alignRight, alignBottom, scale -1 ]
+                { description = "", src = assetUrl "backgroundSide1.png" }
+
+        uprightRow =
+            row
+                -- Keep maximum until you can find bug pushing background down on
+                -- portfolio
+                [ height (fill |> maximum 685), width fill, clip ]
+                [ leftImage
+                , rightImage
+                ]
+
+        mirrorRow =
+            if Debug.log "current scene" viewport.sceneHeight >= 1400 then
+                row
+                    [ alignBottom, height (fill |> maximum 685), width fill, clip ]
+                    [ mirrorLeftImage
+                    , mirrorRightImage
+                    ]
+
+            else
+                none
     in
-    row
-        -- Keep maximum until you can find bug pushing background down on
-        -- portfolio
-        [ height (fill |> maximum 685), width fill, clip ]
-        [ leftImage
-        , rightImage
+    column
+        [ height fill, width fill ]
+        [ uprightRow
+        , mirrorRow
         ]
         |> behindContent
 
@@ -550,7 +646,7 @@ siteHeader : Viewport -> HeaderState -> Element Msg
 siteHeader viewport headerState =
     column
         [ centerX, padding 20 ]
-        [ nameElement "ANDREW DILMORE"
+        [ nameElement "ANDREW DILMORE" headerState.displayContact
         , [ { title = "Portfolio", url = thumbnailsUrl }
           , { title = "About", url = aboutUrl }
           , { title = "Resume", url = resumeUrl }
@@ -589,18 +685,47 @@ siteFooter =
         Element.none
 
 
-nameElement : String -> Element msg
-nameElement name =
+nameElement : String -> Bool -> Element Msg
+nameElement name displayContact =
     link
         ([ Font.color (rgb255 0 0 0)
          , Font.size (scaled 5)
-         , centerX
          ]
             ++ futuraBold
         )
         { label = text name
         , url = homeUrl
         }
+        |> el
+            [ centerX
+            , contactInfoElement displayContact |> onRight
+            ]
+
+
+contactInfoElement : Bool -> Element Msg
+contactInfoElement displayContact =
+    let
+        contactElement =
+            if displayContact then
+                [ text "andrewdilmore@gmail.com"
+                , text "337-936-2652"
+                ]
+                    |> column [ paddingXY 0 5, Font.size (scaled 3) ]
+
+            else
+                none
+    in
+    text "Contact"
+        |> el
+            ([ Font.size (scaled 4)
+             , moveRight 19
+             , alignBottom
+             , Events.onMouseEnter EnterContact
+             , Events.onMouseLeave LeaveContact
+             , contactElement |> below
+             ]
+                ++ futuraMedium
+            )
 
 
 headerLinkElement : HeaderState -> { title : String, url : String } -> Element Msg
@@ -1330,6 +1455,17 @@ decodeDirData =
             Decode.field "subdirs" (Decode.list Decode.string)
     in
     Decode.map2 DirData decodeFiles decodeSubDirs
+
+
+requestScene : Cmd Msg
+requestScene =
+    Task.perform
+        (\viewport ->
+            SceneResize
+                (round viewport.scene.width)
+                (round viewport.scene.height)
+        )
+        Dom.getViewport
 
 
 
