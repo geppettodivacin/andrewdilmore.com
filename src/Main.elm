@@ -569,7 +569,7 @@ bodyElement model =
             usualBody model.viewport headerState (aboutElement model.viewport)
 
         Resume headerState ->
-            usualBody model.viewport headerState none
+            usualBody model.viewport headerState (resumeElement model.viewport)
 
         Thumbnails headerState ->
             usualBody model.viewport headerState (thumbnailListElement model)
@@ -705,12 +705,53 @@ nameElement name displayContact =
 contactInfoElement : Bool -> Element Msg
 contactInfoElement displayContact =
     let
+        padding =
+            { top = 5
+            , left = 10
+            , right = 10
+            , bottom = 8
+            }
+
+        corners =
+            { topLeft = 15
+            , topRight = 15
+            , bottomLeft = 0
+            , bottomRight = 0
+            }
+
+        sides =
+            { top = 3
+            , left = 3
+            , right = 3
+            , bottom = 0
+            }
+
+        email =
+            link []
+                { url = "mailto:andrewdilmore@gmail.com"
+                , label = text "andrewdilmore.com"
+                }
+
+        phone =
+            link []
+                { url = "tel:1-337-936-2652"
+                , label = text "337-936-2652"
+                }
+
         contactElement =
             if displayContact then
-                [ text "andrewdilmore@gmail.com"
-                , text "337-936-2652"
+                [ email
+                , phone
                 ]
-                    |> column [ paddingXY 0 5, Font.size (scaled 3) ]
+                    |> column
+                        [ paddingEach padding
+                        , Font.size (scaled 3)
+                        , Font.color colors.white
+                        , Border.color colors.black
+                        , Background.color (colors.transparentBlack 0.7)
+                        , Border.widthEach sides
+                        , Border.roundEach corners
+                        ]
 
             else
                 none
@@ -848,31 +889,31 @@ withHomeLinkArrows viewport isSelected =
                 _ ->
                     19
 
-        correctScale =
+        correctWidth =
             case viewport.device.class of
                 BigDesktop ->
-                    0.7
+                    55
 
                 _ ->
-                    0.5
+                    39
 
         withLeftArrow =
             image
-                [ rotate 3.14159
-                , moveUp verticalOffset
-                , scale correctScale
+                [ rotate pi
+                , moveLeft 10
+                , width (px correctWidth)
                 , centerY
                 ]
-                { src = assetUrl "Rollover_button_1.png", description = "" }
+                { src = assetUrl "Rollover.png", description = "" }
                 |> onLeft
 
         withRightArrow =
             image
-                [ moveUp verticalOffset
-                , scale correctScale
+                [ moveRight 10
+                , width (px correctWidth)
                 , centerY
                 ]
-                { src = assetUrl "Rollover_button_2.png", description = "" }
+                { src = assetUrl "Rollover.png", description = "" }
                 |> onRight
     in
     if isSelected then
@@ -1158,6 +1199,25 @@ aboutParagraphElements =
 
 
 
+-- RESUME
+
+
+resumeElement : Viewport -> Element Msg
+resumeElement viewport =
+    let
+        correctWidth =
+            viewport.width - 650
+    in
+    image
+        [ width (px correctWidth)
+        , centerX
+        ]
+        { src = assetUrl "Creative_Resume.png"
+        , description = ""
+        }
+
+
+
 -- PORTFOLIO
 -- Thumbnail List
 
@@ -1241,67 +1301,79 @@ thumbnailElement viewport src =
 fullSizeElement : Viewport -> FullSizeData -> Element Msg
 fullSizeElement viewport data =
     let
+        arrowWidth =
+            80
+
+        arrowImage =
+            image [ width (px arrowWidth) ]
+                { src = assetUrl "Arrow.png", description = "" }
+
         leftArrow =
             if not (SelectList.isHead data) then
-                text "<"
+                arrowImage
                     |> el [ centerY, centerX ]
                     |> el
-                        [ Font.size (scaled 5)
-                        , Events.onClick PrevImage
+                        [ Events.onClick PrevImage
                         , alignLeft
                         , height fill
-                        , width (px 50)
+                        , width (px arrowWidth)
                         , pointer
-                        , alpha 0.5
-                        , mouseOver [ alpha 0.7 ]
+                        , rotate pi
+                        , moveUp 10
+                        , alpha 0.6
+                        , mouseOver [ alpha 1 ]
                         ]
 
             else
-                none
+                el [ width (px arrowWidth) ] none
 
         rightArrow =
             if not (SelectList.isLast data) then
-                text ">"
+                arrowImage
                     |> el [ centerY, centerX ]
                     |> el
-                        [ Font.size (scaled 5)
-                        , Events.onClick NextImage
+                        [ Events.onClick NextImage
                         , alignRight
                         , height fill
-                        , width (px 50)
+                        , width (px arrowWidth)
                         , pointer
-                        , alpha 0.5
-                        , mouseOver [ alpha 0.7 ]
+                        , moveUp 10
+                        , alpha 0.6
+                        , mouseOver [ alpha 1 ]
                         ]
 
             else
-                none
-
-        arrowsRow =
-            row [ width fill, height fill ]
-                [ leftArrow
-                , rightArrow
-                ]
+                el [ width (px arrowWidth) ] none
     in
-    fullSizeImageElement viewport data
-        |> el
+    [ leftArrow
+    , fullSizeImageElement viewport data
+    , rightArrow
+    ]
+        |> row
             [ centerX
-            , width fill
             , height fill
-            , arrowsRow |> behindContent
+            , spacing 20
             ]
 
 
 fullSizeImageElement : Viewport -> FullSizeData -> Element Msg
 fullSizeImageElement viewport data =
+    let
+        maxWidth =
+            viewport.width - 650
+
+        maxHeight =
+            viewport.height - 200
+    in
     image
-        [ width (shrink |> maximum (viewport.width - 614))
-        , height (shrink |> maximum (viewport.height - 200))
+        [ width (shrink |> maximum maxWidth)
+        , height (shrink |> maximum maxHeight)
         ]
         { src = SelectList.selected data
         , description = ""
         }
         |> (\img -> link [ centerX, centerY ] { label = img, url = thumbnailsUrl })
+        |> el [ centerX, centerY, width (px maxWidth) ]
 
 
 
@@ -1473,6 +1545,10 @@ requestScene =
 -- CONSTANTS
 
 
+pi =
+    3.14159
+
+
 rowLength =
     3
 
@@ -1486,6 +1562,8 @@ colors =
     , darkGray = rgb 0.5 0.5 0.5
     , paintPurple = rgb255 136 49 227
     , black = rgb 0 0 0
+    , transparentBlack = \a -> rgba 0 0 0 a
+    , white = rgb 1 1 1
     }
 
 
