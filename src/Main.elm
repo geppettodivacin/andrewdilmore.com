@@ -4,7 +4,6 @@ import Browser
 import Browser.Dom as Dom
 import Browser.Events
 import Browser.Navigation as Navigation
-import Debug
 import Dict exposing (Dict)
 import Element exposing (..)
 import Element.Background as Background
@@ -370,7 +369,7 @@ update msg model =
                     , device = model.viewport.device
                     }
             in
-            ( { model | viewport = Debug.log "scene change" newViewport }, Cmd.none )
+            ( { model | viewport = newViewport }, Cmd.none )
 
         ClickedLink request ->
             case request of
@@ -427,7 +426,7 @@ update msg model =
         GotDirListing result ->
             let
                 newDirListing =
-                    RemoteData.fromResult (Debug.log "Result" result)
+                    RemoteData.fromResult result
 
                 newModel =
                     { model | dirListing = newDirListing }
@@ -561,21 +560,31 @@ view model =
 
 bodyElement : Model -> Element Msg
 bodyElement model =
+    case classifySimpleDevice model.viewport.device of
+        FullDesktop ->
+            bodyElementDesktop model
+
+        Mobile ->
+            bodyElementMobile model
+
+
+bodyElementDesktop : Model -> Element Msg
+bodyElementDesktop model =
     case model.page of
         Home selected ->
-            homeElement model.viewport selected
+            homeDesktopElement model.viewport selected
 
         About headerState ->
-            usualBody model.viewport headerState (aboutElement model.viewport)
+            usualBodyDesktop model.viewport headerState (aboutElement model.viewport)
 
         Resume headerState ->
-            usualBody model.viewport headerState (resumeElement model.viewport)
+            usualBodyDesktop model.viewport headerState (resumeElement model.viewport)
 
         Thumbnails headerState ->
-            usualBody model.viewport headerState (thumbnailListElement model)
+            usualBodyDesktop model.viewport headerState (thumbnailListDesktopElement model)
 
         FullSize headerState data ->
-            usualBody
+            usualBodyDesktop
                 model.viewport
                 headerState
                 (fullSizeElement model.viewport data)
@@ -584,92 +593,190 @@ bodyElement model =
             text "Not found"
 
 
-usualBody : Viewport -> HeaderState -> Element Msg -> Element Msg
-usualBody viewport headerState content =
+bodyElementMobile : Model -> Element Msg
+bodyElementMobile model =
+    case model.page of
+        Home selected ->
+            homeMobileElement model.viewport selected
+
+        About headerState ->
+            usualBodyMobile model.viewport headerState (aboutElement model.viewport)
+
+        Resume headerState ->
+            usualBodyMobile model.viewport headerState (resumeElement model.viewport)
+
+        Thumbnails headerState ->
+            usualBodyMobile model.viewport headerState (thumbnailListMobileElement model)
+
+        FullSize headerState data ->
+            usualBodyMobile model.viewport headerState (thumbnailListMobileElement model)
+
+        NotFound ->
+            text "Not found"
+
+
+usualBodyDesktop viewport headerState content =
+    let
+        withSidebars mid =
+            row [ width fill, height fill ]
+                [ sidebarLeft viewport
+                , mid
+                , sidebarRight viewport
+                ]
+    in
     column
-        [ width fill, height fill, spacing 10 ]
-        [ siteHeader viewport headerState
+        [ width (fillPortion 2), height fill, spacing 10 ]
+        [ siteHeader headerState
         , content
         , siteFooter
         ]
-        |> el [ width fill, height fill, withBackground viewport ]
+        |> withSidebars
 
 
-withBackground : Viewport -> Attribute Msg
-withBackground viewport =
+sidebarLeft : Viewport -> Element msg
+sidebarLeft viewport =
     let
-        leftImage =
-            image [ alignLeft ]
+        topImage =
+            image [ alignLeft, alignTop, width (fill |> maximum 280) ]
                 { description = "", src = assetUrl "backgroundSide1.png" }
 
-        rightImage =
-            image [ alignRight ]
-                { description = "", src = assetUrl "backgroundSide0.png" }
-
-        mirrorLeftImage =
-            image [ alignLeft, alignBottom, scale -1 ]
-                { description = "", src = assetUrl "backgroundSide0.png" }
-
-        mirrorRightImage =
-            image [ alignRight, alignBottom, scale -1 ]
-                { description = "", src = assetUrl "backgroundSide1.png" }
-
-        uprightRow =
-            row
-                -- Keep maximum until you can find bug pushing background down on
-                -- portfolio
-                [ height (fill |> maximum 685), width fill, clip ]
-                [ leftImage
-                , rightImage
-                ]
-
-        mirrorRow =
-            if Debug.log "current scene" viewport.sceneHeight >= 1400 then
-                row
-                    [ alignBottom, height (fill |> maximum 685), width fill, clip ]
-                    [ mirrorLeftImage
-                    , mirrorRightImage
-                    ]
+        bottomImage =
+            if viewport.sceneHeight >= 1400 then
+                image [ alignLeft, alignBottom, scale -1, width (fill |> maximum 280) ]
+                    { description = "", src = assetUrl "backgroundSide0.png" }
 
             else
                 none
     in
-    column
-        [ height fill, width fill ]
-        [ uprightRow
-        , mirrorRow
+    column [ height fill, width fill ]
+        [ topImage
+        , bottomImage
         ]
-        |> behindContent
 
 
-siteHeader : Viewport -> HeaderState -> Element Msg
-siteHeader viewport headerState =
+sidebarRight : Viewport -> Element msg
+sidebarRight viewport =
+    let
+        topImage =
+            image [ alignRight, alignTop, width (fill |> maximum 280) ]
+                { description = "", src = assetUrl "backgroundSide0.png" }
+
+        bottomImage =
+            if viewport.sceneHeight >= 1400 then
+                image [ alignRight, alignBottom, scale -1, width (fill |> maximum 280) ]
+                    { description = "", src = assetUrl "backgroundSide1.png" }
+
+            else
+                none
+    in
+    column [ height fill, width fill ]
+        [ topImage
+        , bottomImage
+        ]
+
+
+usualBodyMobile : Viewport -> HeaderState -> Element Msg -> Element Msg
+usualBodyMobile viewport headerState content =
+    column
+        [ width fill, height fill, spacing 10 ]
+        [ siteHeaderMobile viewport headerState
+        , content
+        , siteFooter
+        ]
+
+
+headerLinkInfo =
+    [ { title = "Portfolio", url = thumbnailsUrl }
+    , { title = "About", url = aboutUrl }
+    , { title = "Resume", url = resumeUrl }
+    ]
+
+
+siteHeader : HeaderState -> Element Msg
+siteHeader headerState =
     column
         [ centerX, padding 20 ]
         [ nameElement "ANDREW DILMORE" headerState.displayContact
-        , [ { title = "Portfolio", url = thumbnailsUrl }
-          , { title = "About", url = aboutUrl }
-          , { title = "Resume", url = resumeUrl }
-          ]
+        , headerLinkInfo
             |> List.map (headerLinkElement headerState)
             |> row [ centerX, spacing 10 ]
-        , headerDividerElement viewport
+        , headerDividerElement
         ]
 
 
-headerDividerElement : Viewport -> Element Msg
-headerDividerElement viewport =
+siteHeaderMobile : Viewport -> HeaderState -> Element Msg
+siteHeaderMobile viewport headerState =
     let
-        dividerWidth =
-            viewport.width - 750
+        spaceWidth =
+            break { break = 890, high = 70, low = 108 } viewport.width
+    in
+    column
+        [ centerX, padding 20 ]
+        [ nameElementMobile viewport "ANDREW DILMORE"
+        , contactMobileElement viewport
+        , headerLinkInfo
+            |> List.map (headerLinkElementMobile viewport headerState)
+            |> row [ centerX, paddingXY 0 10, spacing spaceWidth ]
+        , headerDividerElementMobile
+        ]
 
+
+contactMobileElement : Viewport -> Element Msg
+contactMobileElement viewport =
+    let
+        emailElement =
+            row [ alignLeft ]
+                [ emailIcon
+                , el [ width (px 12) ] none
+                , link []
+                    { url = "mailto:andrewdilmore@gmail.com"
+                    , label = text "andrewdilmore@gmail.com"
+                    }
+                ]
+
+        phoneElement =
+            row [ alignRight ]
+                [ phoneIcon
+                , el [ width (px 12) ] none
+                , link []
+                    { url = "tel:1-337-936-2652"
+                    , label = text "337-936-2652"
+                    }
+                ]
+
+        fontSize =
+            break { break = 890, low = 4, high = 5 } viewport.width
+    in
+    row
+        [ width fill
+        , spacing 30
+        , Font.size (scaled fontSize)
+        ]
+        [ emailElement
+        , phoneElement
+        ]
+
+
+headerDividerElement : Element Msg
+headerDividerElement =
+    let
         dividerHeight =
             5
     in
     image
-        [ padding 3
+        [ paddingXY 20 3
         , height (px dividerHeight)
-        , width (px dividerWidth)
+        , width fill
+        , centerX
+        ]
+        { src = assetUrl "gradient.svg", description = "" }
+
+
+headerDividerElementMobile : Element Msg
+headerDividerElementMobile =
+    image
+        [ padding 3
+        , width fill
         , centerX
         ]
         { src = assetUrl "gradient.svg", description = "" }
@@ -688,7 +795,7 @@ siteFooter =
 nameElement : String -> Bool -> Element Msg
 nameElement name displayContact =
     link
-        ([ Font.color (rgb255 0 0 0)
+        ([ Font.color colors.black
          , Font.size (scaled 5)
          ]
             ++ futuraBold
@@ -700,6 +807,24 @@ nameElement name displayContact =
             [ centerX
             , contactInfoElement displayContact |> onRight
             ]
+
+
+nameElementMobile : Viewport -> String -> Element Msg
+nameElementMobile viewport name =
+    let
+        fontSize =
+            break { break = 890, low = 6, high = 7 } viewport.width
+    in
+    link
+        ([ Font.color colors.black
+         , Font.size (scaled fontSize)
+         ]
+            ++ futuraBold
+        )
+        { label = text name
+        , url = homeUrl
+        }
+        |> el [ centerX ]
 
 
 contactInfoElement : Bool -> Element Msg
@@ -729,7 +854,7 @@ contactInfoElement displayContact =
         email =
             link []
                 { url = "mailto:andrewdilmore@gmail.com"
-                , label = text "andrewdilmore.com"
+                , label = text "andrewdilmore@gmail.com"
                 }
 
         phone =
@@ -751,9 +876,19 @@ contactInfoElement displayContact =
                         , Background.color (colors.transparentBlack 0.7)
                         , Border.widthEach sides
                         , Border.roundEach corners
+                        , backgroundPad |> behindContent
                         ]
 
             else
+                none
+
+        backgroundPad =
+            el
+                [ width (px 250)
+                , height (px 100)
+                , moveLeft 35
+                , moveUp 30
+                ]
                 none
     in
     text "Contact"
@@ -789,8 +924,7 @@ headerLinkElement headerState content =
                 colors.darkGray
     in
     link
-        [ Border.rounded 3
-        , Font.color fontColor
+        [ Font.color fontColor
         , padding 10
         , Events.onMouseEnter (MouseOverLink content.title)
         , Events.onMouseLeave MouseLeaveLink
@@ -800,21 +934,33 @@ headerLinkElement headerState content =
         }
 
 
+headerLinkElementMobile : Viewport -> HeaderState -> { title : String, url : String } -> Element Msg
+headerLinkElementMobile viewport headerState content =
+    let
+        isSelected =
+            content.title == headerState.selected
+
+        fontColor =
+            if isSelected then
+                colors.paintPurple
+
+            else
+                colors.darkGray
+
+        fontSize =
+            break { break = 890, high = 6, low = 5 } viewport.width
+    in
+    link
+        [ Font.color fontColor
+        , Font.size (scaled fontSize)
+        ]
+        { label = text content.title
+        , url = content.url
+        }
+
+
 
 -- HOME
-
-
-homeElement : Viewport -> Maybe String -> Element Msg
-homeElement viewport selected =
-    case classifySimpleDevice viewport.device of
-        FullDesktop ->
-            homeDesktopElement viewport selected
-
-        Mobile ->
-            homeMobileElement viewport selected
-
-
-
 -- Desktop
 
 
@@ -1110,7 +1256,8 @@ aboutElement viewport =
     aboutParagraphElements
         |> textColumn
             ([ centerX
-             , width (px <| viewport.width - 700)
+             , paddingXY 20 0
+             , width fill
              , spacing 30
              , Font.size (scaled 4)
              ]
@@ -1132,15 +1279,14 @@ aboutParagraphElements =
         """
             |> text
       , """
-        "Music, writing, and art have inspired me greatly throughout my life
-        and influence who I am as a person,"
+        “Music, writing, and art have inspired me greatly throughout my life
+        and influence who I am as a person,”
         """
             |> text
             |> el [ Font.italic ]
-      , """
-        is what everyone writes on their
-        cover letters, and I'm no exception to the rule. But we're not here to
-        talk about what makes me similar to your other applicants.
+      , """ is what everyone writes on their cover letters, and I'm no exception
+        to the rule. But we're not here to talk about what makes me similar to
+        your other applicants.
         """
             |> text
       ]
@@ -1159,7 +1305,7 @@ aboutParagraphElements =
     blueprints for a living. During that time, I went through multiple
     depressive states, and I learned more about myself than I ever would have
     learned about welding and OSHA. I would never be able to put my best foot
-    forward in a career path I consider to be just "okay."
+    forward in a career path I consider to be just “okay.”
     """
         |> toParagraph []
     , """
@@ -1178,7 +1324,7 @@ aboutParagraphElements =
       , "American Press" |> text |> el [ Font.italic ]
       , "," |> text
       , "Thrive" |> text |> el [ Font.italic ]
-      , ","
+      , " magazine,"
             |> text
       , """
         and the Lake Charles Southwest Louisiana Convention and Visitors Bureau
@@ -1204,12 +1350,9 @@ aboutParagraphElements =
 
 resumeElement : Viewport -> Element Msg
 resumeElement viewport =
-    let
-        correctWidth =
-            viewport.width - 650
-    in
     image
-        [ width (px correctWidth)
+        [ width fill
+        , paddingXY 0 0
         , centerX
         ]
         { src = assetUrl "Creative_Resume.png"
@@ -1220,16 +1363,6 @@ resumeElement viewport =
 
 -- PORTFOLIO
 -- Thumbnail List
-
-
-thumbnailListElement : Model -> Element Msg
-thumbnailListElement model =
-    case classifySimpleDevice model.viewport.device of
-        FullDesktop ->
-            thumbnailListDesktopElement model
-
-        Mobile ->
-            thumbnailListDesktopElement model
 
 
 thumbnailListDesktopElement : Model -> Element Msg
@@ -1276,13 +1409,12 @@ thumbnailElement : Viewport -> String -> Element Msg
 thumbnailElement viewport src =
     let
         sideLength =
-            (viewport.width - 700) // rowLength
+            ((viewport.width // 2) - 100) // rowLength
     in
     image
         [ width (shrink |> maximum sideLength)
         , centerY
         , centerX
-        , Border.solid
         ]
         { src = src, description = "" }
         |> (\img -> link [ centerY ] { label = img, url = fullSizeUrl src })
@@ -1292,6 +1424,51 @@ thumbnailElement viewport src =
             , centerY
             , clip
             ]
+
+
+
+-- Mobile Thumbnail List
+
+
+thumbnailListMobileElement : Model -> Element Msg
+thumbnailListMobileElement model =
+    let
+        localLoaderElement =
+            loaderElement
+                |> el [ centerX, centerY ]
+                |> el [ width fill, height fill ]
+    in
+    case model.dirListing of
+        Success dirListing ->
+            dirListing
+                |> filesInDir (currentFilter model.filterPath)
+                |> List.map thumbnailElementMobile
+                |> column
+                    [ paddingXY 20 0
+                    , width fill
+                    , spacing 30
+                    ]
+
+        NotAsked ->
+            localLoaderElement
+
+        Loading ->
+            localLoaderElement
+
+        Failure error ->
+            errorElement error
+                |> el [ centerX, centerY ]
+
+
+thumbnailElementMobile : String -> Element Msg
+thumbnailElementMobile src =
+    image
+        [ width fill
+        , height shrink
+        , centerY
+        , centerX
+        ]
+        { src = src, description = "" }
 
 
 
@@ -1311,18 +1488,20 @@ fullSizeElement viewport data =
         leftArrow =
             if not (SelectList.isHead data) then
                 arrowImage
-                    |> el [ centerY, centerX ]
                     |> el
-                        [ Events.onClick PrevImage
+                        [ centerY
+                        , centerX
+                        , Events.onClick PrevImage
                         , alignLeft
-                        , height fill
                         , width (px arrowWidth)
+                        , height shrink
                         , pointer
                         , rotate pi
                         , moveUp 10
                         , alpha 0.6
                         , mouseOver [ alpha 1 ]
                         ]
+                    |> el [ width (px arrowWidth), height fill ]
 
             else
                 el [ width (px arrowWidth) ] none
@@ -1330,17 +1509,19 @@ fullSizeElement viewport data =
         rightArrow =
             if not (SelectList.isLast data) then
                 arrowImage
-                    |> el [ centerY, centerX ]
                     |> el
-                        [ Events.onClick NextImage
+                        [ centerY
+                        , centerX
+                        , Events.onClick NextImage
                         , alignRight
-                        , height fill
+                        , height shrink
                         , width (px arrowWidth)
                         , pointer
                         , moveUp 10
                         , alpha 0.6
                         , mouseOver [ alpha 1 ]
                         ]
+                    |> el [ width (px arrowWidth), height fill ]
 
             else
                 el [ width (px arrowWidth) ] none
@@ -1360,7 +1541,9 @@ fullSizeImageElement : Viewport -> FullSizeData -> Element Msg
 fullSizeImageElement viewport data =
     let
         maxWidth =
-            viewport.width - 650
+            max
+                (viewport.width - 650)
+                ((viewport.width // 2) - 120)
 
         maxHeight =
             viewport.height - 200
@@ -1397,6 +1580,17 @@ break spec value =
 loaderElement : Element msg
 loaderElement =
     Html.div [ Html.Attributes.class "loader loader-bouncing is-active" ] []
+        |> Element.html
+
+
+emailIcon : Element msg
+emailIcon =
+    Html.i [ Html.Attributes.class "fas fa-envelope" ] []
+        |> Element.html
+
+
+phoneIcon =
+    Html.i [ Html.Attributes.class "fas fa-phone" ] []
         |> Element.html
 
 
