@@ -130,7 +130,7 @@ assetUrl src =
 
 queryUrl : String
 queryUrl =
-    Builder.crossOrigin "http://andrewdilmore.com" [ "query" ] []
+    Builder.crossOrigin "https://andrewdilmore.com" [ "query" ] []
 
 
 
