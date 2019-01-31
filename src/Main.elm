@@ -1350,14 +1350,21 @@ aboutParagraphElements =
 
 resumeElement : Viewport -> Element Msg
 resumeElement viewport =
-    image
+    [ image
         [ width fill
         , paddingXY 0 0
         , centerX
         ]
-        { src = assetUrl "Creative_Resume.png"
-        , description = ""
+        { src = assetUrl "ADilmore_Resume.png"
+        , description = "Andrew Dilmore's Creative Resume"
         }
+    , downloadAs [ centerX ]
+        { filename = "ADilmore_Resume.pdf"
+        , url = assetUrl "ADilmore_Resume.pdf"
+        , label = text "Click to download full-size pdf"
+        }
+    ]
+        |> column [ centerX, spacing 20 ]
 
 
 
