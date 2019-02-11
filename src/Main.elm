@@ -48,7 +48,8 @@ route model =
         [ Url.map (toFullSizePage model) (s "portfolio" </> s "full" <?> Query.string "image")
         , Url.map makeAbout (s "about" </> top)
         , Url.map makeResume (s "resume" </> top)
-        , Url.map makeThumbnails (s "portfolio" </> top)
+        , Url.map (makeThumbnails "") (s "portfolio" </> top)
+        , Url.map makeThumbnails (s "portfolio" </> string)
         , Url.map (Home Nothing) top
         ]
 
@@ -62,12 +63,24 @@ toFullSizePage : Model -> Maybe String -> Page
 toFullSizePage model imageSrc =
     case RemoteData.toMaybe model.dirListing of
         Just dirListing ->
-            case Maybe.andThen (makeFullSizeData dirListing model.filterPath) imageSrc of
-                Nothing ->
-                    NotFound
+            let
+                makePage thumbnailData =
+                    case Maybe.andThen (makeFullSizeData dirListing thumbnailData) imageSrc of
+                        Nothing ->
+                            NotFound
 
-                Just data ->
-                    makeFullSize data
+                        Just data ->
+                            makeFullSize data
+            in
+            case model.page of
+                Thumbnails _ thumbnailData ->
+                    makePage thumbnailData
+
+                FullSize _ fullSizeData ->
+                    makePage fullSizeData.thumbnailData
+
+                _ ->
+                    makePage (makeThumbnailData "")
 
         Nothing ->
             case imageSrc of
@@ -75,7 +88,10 @@ toFullSizePage model imageSrc =
                     NotFound
 
                 Just existingSrc ->
-                    makeFullSize (SelectList.singleton existingSrc)
+                    makeFullSize
+                        { focus = SelectList.singleton existingSrc
+                        , thumbnailData = makeThumbnailData ""
+                        }
 
 
 makeHeaderState selected =
@@ -90,8 +106,8 @@ makeResume =
     Resume (makeHeaderState "Resume")
 
 
-makeThumbnails =
-    Thumbnails (makeHeaderState "Portfolio")
+makeThumbnails category =
+    Thumbnails (makeHeaderState "Portfolio") (makeThumbnailData category)
 
 
 makeFullSize =
@@ -103,9 +119,9 @@ homeUrl =
     Builder.absolute [] []
 
 
-thumbnailsUrl : String
-thumbnailsUrl =
-    Builder.absolute [ "portfolio" ] []
+thumbnailsUrl : String -> String
+thumbnailsUrl category =
+    Builder.absolute [ "portfolio", category ] []
 
 
 fullSizeUrl : String -> String
@@ -133,6 +149,16 @@ queryUrl =
     Builder.crossOrigin "https://andrewdilmore.com" [ "query" ] []
 
 
+imagePrefix : String
+imagePrefix =
+    "images/"
+
+
+imageDirectory : String -> String
+imageDirectory category =
+    imagePrefix ++ category
+
+
 
 -- MODEL #######################################################################
 
@@ -142,7 +168,6 @@ type alias Model =
     , viewport : Viewport
     , page : Page
     , dirListing : WebData DirListing
-    , filterPath : FilterPath
     }
 
 
@@ -159,7 +184,7 @@ type Page
     = Home (Maybe String)
     | About HeaderState
     | Resume HeaderState
-    | Thumbnails HeaderState
+    | Thumbnails HeaderState ThumbnailData
     | FullSize HeaderState FullSizeData
     | NotFound
 
@@ -172,7 +197,14 @@ type alias HeaderState =
 
 
 type alias FullSizeData =
-    SelectList String
+    { thumbnailData : ThumbnailData
+    , focus : SelectList String
+    }
+
+
+type alias ThumbnailData =
+    { category : String
+    }
 
 
 type alias DirListing =
@@ -185,10 +217,6 @@ type alias DirData =
     }
 
 
-type FilterPath
-    = FilterPath String (List String)
-
-
 init : { viewport : { width : Int, height : Int } } -> Url -> Navigation.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
@@ -197,7 +225,6 @@ init flags url key =
             , viewport = toViewport flags.viewport
             , page = Home Nothing
             , dirListing = NotAsked
-            , filterPath = FilterPath "images/" []
             }
     in
     ( { initialModel | page = toPage initialModel url }
@@ -218,7 +245,7 @@ toViewport dimensions =
 
 
 
--- FUNCTIONS FOR DIRECTORY AND FILTER ##########################################
+-- FUNCTIONS FOR DIRECTORY ##########################################
 
 
 filesInDir : String -> DirListing -> List String
@@ -237,85 +264,60 @@ filesInDir dir listing =
     currentDir.files ++ subFiles
 
 
-currentFilter : FilterPath -> String
-currentFilter filterPath =
-    case filterPath of
-        FilterPath filter [] ->
-            filter
-
-        FilterPath _ filterList ->
-            filterList
-                |> List.head
-                |> Maybe.withDefault ""
-
-
-possibleFilters : DirListing -> FilterPath -> List String
-possibleFilters dirListing filterPath =
-    case Dict.get (currentFilter filterPath) dirListing of
-        Nothing ->
-            []
-
-        Just dirData ->
-            dirData.subDirs
-
-
-addFilter : String -> FilterPath -> FilterPath
-addFilter newFilter filterPath =
-    case filterPath of
-        FilterPath root filterList ->
-            FilterPath root (newFilter :: filterList)
-
-
-removeFilter : Int -> FilterPath -> FilterPath
-removeFilter count filterPath =
-    case filterPath of
-        FilterPath root filterList ->
-            FilterPath root (List.drop count filterList)
-
-
-makeFullSizeData : DirListing -> FilterPath -> String -> Maybe FullSizeData
-makeFullSizeData listing filter current =
+makeFullSizeData : DirListing -> ThumbnailData -> String -> Maybe FullSizeData
+makeFullSizeData listing thumbnailData current =
     let
-        doThing ( start, end ) =
+        tryFocus ( start, end ) =
             case end of
                 [] ->
                     Nothing
 
                 head :: tail ->
                     Just (SelectList.fromLists start head tail)
+
+        toData focus =
+            { focus = focus
+            , thumbnailData = thumbnailData
+            }
     in
     listing
-        |> filesInDir (currentFilter filter)
+        |> filesInDir (imageDirectory thumbnailData.category)
         |> List.splitWhen (\file -> file == current)
-        |> Maybe.andThen doThing
+        |> Maybe.andThen tryFocus
+        |> Maybe.map toData
+
+
+makeThumbnailData : String -> ThumbnailData
+makeThumbnailData category =
+    ThumbnailData category
 
 
 nextImage : Navigation.Key -> FullSizeData -> ( FullSizeData, Cmd Msg )
 nextImage key data =
     let
-        newData =
-            SelectList.attempt (SelectList.selectBy 1) data
+        newFocus =
+            SelectList.attempt (SelectList.selectBy 1) data.focus
 
         newUrl =
-            newData
+            newFocus
                 |> SelectList.selected
                 |> fullSizeUrl
     in
-    ( newData, Navigation.pushUrl key newUrl )
+    ( { data | focus = newFocus }, Navigation.pushUrl key newUrl )
 
 
 prevImage : Navigation.Key -> FullSizeData -> ( FullSizeData, Cmd Msg )
 prevImage key data =
     let
-        newData =
-            SelectList.attempt (SelectList.selectBy -1) data
+        newFocus =
+            SelectList.attempt (SelectList.selectBy -1) data.focus
 
         newUrl =
-            newData
+            newFocus
                 |> SelectList.selected
                 |> fullSizeUrl
     in
-    ( newData, Navigation.pushUrl key newUrl )
+    ( { data | focus = newFocus }, Navigation.pushUrl key newUrl )
 
 
 
@@ -333,8 +335,6 @@ type Msg
     | EnterContact
     | LeaveContact
     | GotDirListing (Result Http.Error DirListing)
-    | AddFilter String
-    | RemoveFilters Int
     | OpenImage String
     | NextImage
     | PrevImage
@@ -433,21 +433,15 @@ update msg model =
 
                 newPage =
                     case newModel.page of
-                        FullSize _ dirListing ->
+                        FullSize _ fullSizeData ->
                             toFullSizePage
                                 newModel
-                                (Just (SelectList.selected dirListing))
+                                (Just (SelectList.selected fullSizeData.focus))
 
                         _ ->
                             newModel.page
             in
             ( { newModel | page = newPage }, requestScene )
-
-        AddFilter newFilter ->
-            ( model, Cmd.none )
-
-        RemoveFilters count ->
-            ( model, Cmd.none )
 
         OpenImage img ->
             let
@@ -487,7 +481,7 @@ update msg model =
                     ( model, Cmd.none )
 
         CloseImage ->
-            ( model, Navigation.pushUrl model.key thumbnailsUrl )
+            ( model, Navigation.pushUrl model.key (thumbnailsUrl "") )
 
 
 updateHovered : Maybe String -> Page -> Page
@@ -502,8 +496,8 @@ updateHovered hovered page =
         Resume headerState ->
             Resume { headerState | hovered = hovered }
 
-        Thumbnails headerState ->
-            Thumbnails { headerState | hovered = hovered }
+        Thumbnails headerState thumbnailData ->
+            Thumbnails { headerState | hovered = hovered } thumbnailData
 
         FullSize headerState data ->
             FullSize { headerState | hovered = hovered } data
@@ -524,8 +518,8 @@ updateDisplayContact displayContact page =
         Resume headerState ->
             Resume { headerState | displayContact = displayContact }
 
-        Thumbnails headerState ->
-            Thumbnails { headerState | displayContact = displayContact }
+        Thumbnails headerState thumbnailData ->
+            Thumbnails { headerState | displayContact = displayContact } thumbnailData
 
         FullSize headerState data ->
             FullSize { headerState | displayContact = displayContact } data
@@ -580,7 +574,7 @@ bodyElementDesktop model =
         Resume headerState ->
             usualBodyDesktop model.viewport headerState (resumeElement model.viewport)
 
-        Thumbnails headerState ->
+        Thumbnails headerState thumbnailData ->
             usualBodyDesktop model.viewport headerState (thumbnailListDesktopElement model)
 
         FullSize headerState data ->
@@ -605,7 +599,7 @@ bodyElementMobile model =
         Resume headerState ->
             usualBodyMobile model.viewport headerState (resumeElement model.viewport)
 
-        Thumbnails headerState ->
+        Thumbnails headerState thumbnailData ->
             usualBodyMobile model.viewport headerState (thumbnailListMobileElement model)
 
         FullSize headerState data ->
@@ -686,7 +680,7 @@ usualBodyMobile viewport headerState content =
 
 
 headerLinkInfo =
-    [ { title = "Portfolio", url = thumbnailsUrl }
+    [ { title = "Portfolio", url = thumbnailsUrl "design" }
     , { title = "About", url = aboutUrl }
     , { title = "Resume", url = resumeUrl }
     ]
@@ -993,7 +987,7 @@ homeLinkListElement viewport selected =
          ]
             ++ futuraMedium
         )
-        [ homeLinkElement viewport "Portfolio" thumbnailsUrl selected
+        [ homeLinkElement viewport "Portfolio" (thumbnailsUrl "design") selected
         , homeLinkElement viewport "About" aboutUrl selected
         , homeLinkElement viewport "Resume" resumeUrl selected
         ]
@@ -1220,7 +1214,7 @@ homeLinkListMobileElement viewport selected =
          ]
             ++ futuraMedium
         )
-        [ homeLinkMobileElement "Portfolio" thumbnailsUrl selected
+        [ homeLinkMobileElement "Portfolio" (thumbnailsUrl "design") selected
         , homeLinkMobileElement "About" aboutUrl selected
         , homeLinkMobileElement "Resume" resumeUrl selected
         ]
@@ -1380,29 +1374,77 @@ thumbnailListDesktopElement model =
                 |> el [ centerX, centerY ]
                 |> el [ width fill, height fill ]
     in
-    case model.dirListing of
-        Success dirListing ->
-            dirListing
-                |> filesInDir (currentFilter model.filterPath)
-                |> chunksOf rowLength
-                |> thumbnailColumn model.viewport
+    case model.page of
+        Thumbnails _ thumbnailData ->
+            case model.dirListing of
+                Success dirListing ->
+                    dirListing
+                        |> filesInDir (imageDirectory thumbnailData.category)
+                        |> chunksOf rowLength
+                        |> thumbnailColumn model.viewport thumbnailData.category
 
-        NotAsked ->
-            localLoaderElement
+                NotAsked ->
+                    localLoaderElement
 
-        Loading ->
-            localLoaderElement
+                Loading ->
+                    localLoaderElement
 
-        Failure error ->
-            errorElement error
-                |> el [ centerX, centerY ]
+                Failure error ->
+                    directoryErrorElement error
+                        |> el [ centerX, centerY ]
+
+        _ ->
+            unknownPageErrorElement
 
 
-thumbnailColumn : Viewport -> List (List String) -> Element Msg
-thumbnailColumn viewport rows =
+thumbnailColumn : Viewport -> String -> List (List String) -> Element Msg
+thumbnailColumn viewport currentCategory rows =
+    let
+        insertHeader list =
+            portfolioCategoryListElement currentCategory :: list
+    in
     rows
         |> List.map (thumbnailRow viewport)
+        |> insertHeader
         |> column [ centerX, spacing 20 ]
+
+
+portfolioCategoryListElement : String -> Element Msg
+portfolioCategoryListElement currentCategory =
+    [ { category = "design", label = "Graphic Design" }
+    , { category = "photography", label = "Photography" }
+    ]
+        |> List.map (portfolioCategoryElement currentCategory)
+        |> row
+            [ spacing 20
+            , centerX
+            ]
+
+
+portfolioCategoryElement : String -> { category : String, label : String } -> Element Msg
+portfolioCategoryElement currentCategory info =
+    let
+        isSelected =
+            Debug.log "Category" info.category == Debug.log "Current" currentCategory
+
+        fontAttributes =
+            if isSelected then
+                futuraBold ++ [ Font.color colors.black ]
+
+            else
+                futuraMedium ++ [ Font.color colors.darkGray ]
+    in
+    link
+        ([ centerX
+         , centerY
+         , Font.size (scaled 4)
+         , mouseOver [ Font.color colors.black ]
+         ]
+            ++ fontAttributes
+        )
+        { url = thumbnailsUrl info.category
+        , label = text info.label
+        }
 
 
 thumbnailRow : Viewport -> List String -> Element Msg
@@ -1444,26 +1486,35 @@ thumbnailListMobileElement model =
             loaderElement
                 |> el [ centerX, centerY ]
                 |> el [ width fill, height fill ]
+
+        insertHeader category list =
+            portfolioCategoryListMobileElement category :: list
     in
-    case model.dirListing of
-        Success dirListing ->
-            dirListing
-                |> filesInDir (currentFilter model.filterPath)
-                |> List.map thumbnailElementMobile
-                |> column
-                    [ paddingXY 20 0
-                    , width fill
-                    , spacing 30
-                    ]
+    case model.page of
+        Thumbnails _ thumbnailData ->
+            case model.dirListing of
+                Success dirListing ->
+                    dirListing
+                        |> filesInDir (imageDirectory thumbnailData.category)
+                        |> List.map thumbnailElementMobile
+                        |> insertHeader thumbnailData.category
+                        |> column
+                            [ paddingXY 20 0
+                            , width fill
+                            , spacing 30
+                            ]
 
-        NotAsked ->
-            localLoaderElement
+                NotAsked ->
+                    localLoaderElement
 
-        Loading ->
-            localLoaderElement
+                Loading ->
+                    localLoaderElement
 
-        Failure error ->
-            errorElement error
+                Failure error ->
+                    directoryErrorElement error
+
+        _ ->
+            unknownPageErrorElement
                 |> el [ centerX, centerY ]
 
 
@@ -1476,6 +1527,43 @@ thumbnailElementMobile src =
         , centerX
         ]
         { src = src, description = "" }
+
+
+portfolioCategoryListMobileElement : String -> Element Msg
+portfolioCategoryListMobileElement currentCategory =
+    [ { category = "design", label = "Graphic Design" }
+    , { category = "photography", label = "Photography" }
+    ]
+        |> List.map (portfolioCategoryMobileElement currentCategory)
+        |> row
+            [ spacing 35
+            , centerX
+            ]
+
+
+portfolioCategoryMobileElement : String -> { category : String, label : String } -> Element Msg
+portfolioCategoryMobileElement currentCategory info =
+    let
+        isSelected =
+            Debug.log "Category" info.category == Debug.log "Current" currentCategory
+
+        fontAttributes =
+            if isSelected then
+                futuraBold ++ [ Font.color colors.black ]
+
+            else
+                futuraMedium ++ [ Font.color colors.darkGray ]
+    in
+    link
+        ([ centerX
+         , centerY
+         , Font.size (scaled 5)
+         ]
+            ++ fontAttributes
+        )
+        { url = thumbnailsUrl info.category
+        , label = text info.label
+        }
 
 
 
@@ -1493,7 +1581,7 @@ fullSizeElement viewport data =
                 { src = assetUrl "Arrow.png", description = "" }
 
         leftArrow =
-            if not (SelectList.isHead data) then
+            if not (SelectList.isHead data.focus) then
                 arrowImage
                     |> el
                         [ centerY
@@ -1514,7 +1602,7 @@ fullSizeElement viewport data =
                 el [ width (px arrowWidth) ] none
 
         rightArrow =
-            if not (SelectList.isLast data) then
+            if not (SelectList.isLast data.focus) then
                 arrowImage
                     |> el
                         [ centerY
@@ -1559,10 +1647,10 @@ fullSizeImageElement viewport data =
         [ width (shrink |> maximum maxWidth)
         , height (shrink |> maximum maxHeight)
         ]
-        { src = SelectList.selected data
+        { src = SelectList.selected data.focus
         , description = ""
         }
-        |> (\img -> link [ centerX, centerY ] { label = img, url = thumbnailsUrl })
+        |> (\img -> link [ centerX, centerY ] { label = img, url = thumbnailsUrl data.thumbnailData.category })
         |> el [ centerX, centerY, width (px maxWidth) ]
 
 
@@ -1782,8 +1870,8 @@ chunksOf n list =
             List.take n list :: chunksOf n rest
 
 
-errorElement : Http.Error -> Element msg
-errorElement error =
+directoryErrorElement : Http.Error -> Element msg
+directoryErrorElement error =
     textColumn [ spacing 10, width (px 600) ]
         [ paragraph []
             [ text
@@ -1795,6 +1883,23 @@ errorElement error =
                 """
             ]
         , text (httpErrorToString error)
+        ]
+
+
+unknownPageErrorElement : Element msg
+unknownPageErrorElement =
+    textColumn [ spacing 10, width (px 600) ]
+        [ paragraph []
+            [ text
+                """
+                I am getting mixed signals for where you are! This is not
+                normal. Clicking Andrew's name at the top of the page should
+                fix this. If you ever find yourself back here, email the
+                website developer, Eric Dilmore, at ericdilmore@gmail.com, and
+                let him know how you got here. That will help this get fixed
+                for good!
+                """
+            ]
         ]
 
 
