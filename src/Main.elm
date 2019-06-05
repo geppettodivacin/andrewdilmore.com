@@ -149,6 +149,15 @@ queryUrl =
     Builder.crossOrigin "https://andrewdilmore.com" [ "query" ] []
 
 
+thumbnailUrl : String -> String
+thumbnailUrl imagePath =
+    let
+        parts =
+            String.split "/" imagePath
+    in
+    Builder.absolute ("thumbnails" :: parts) []
+
+
 imagePrefix : String
 imagePrefix =
     "images/"
@@ -1465,7 +1474,7 @@ thumbnailElement viewport src =
         , centerY
         , centerX
         ]
-        { src = src, description = "" }
+        { src = thumbnailUrl src, description = "" }
         |> (\img -> link [ centerY ] { label = img, url = fullSizeUrl src })
         |> el
             [ width (px sideLength)
