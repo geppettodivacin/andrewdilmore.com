@@ -14,8 +14,7 @@
             "elm/url": "1.0.0",
             "elm-community/list-extra": "8.1.0",
             "krisajenkins/remotedata": "6.0.1",
-            "mdgriffith/elm-ui": "1.1.0",
-            "miyamoen/select-list": "4.0.1"
+            "mdgriffith/elm-ui": "1.1.0"
         },
         "indirect": {
             "elm/bytes": "1.0.7",

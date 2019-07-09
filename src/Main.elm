@@ -19,7 +19,6 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as List
 import RemoteData exposing (RemoteData(..), WebData)
-import SelectList exposing (SelectList)
 import Task
 import Url exposing (Url)
 import Url.Builder as Builder
@@ -42,76 +41,55 @@ main =
 -- ROUTES ######################################################################
 
 
-route : Model -> Parser (Page -> a) a
-route model =
+route : Parser (Page -> a) a
+route =
     oneOf
-        [ Url.map (toFullSizePage model) (s "portfolio" </> s "full" <?> Query.string "image")
+        [ Url.map makeFullSize (s "portfolio" </> string </> s "full" </> string)
         , Url.map makeAbout (s "about" </> top)
         , Url.map makeResume (s "resume" </> top)
-        , Url.map (makeThumbnails "") (s "portfolio" </> top)
         , Url.map makeThumbnails (s "portfolio" </> string)
         , Url.map (Home Nothing) top
         ]
 
 
-toPage : Model -> Url -> Page
-toPage model url =
-    Maybe.withDefault NotFound (Url.parse (route model) url)
-
-
-toFullSizePage : Model -> Maybe String -> Page
-toFullSizePage model imageSrc =
-    case RemoteData.toMaybe model.dirListing of
-        Just dirListing ->
-            let
-                makePage thumbnailData =
-                    case Maybe.andThen (makeFullSizeData dirListing thumbnailData) imageSrc of
-                        Nothing ->
-                            NotFound
-
-                        Just data ->
-                            makeFullSize data
-            in
-            case model.page of
-                Thumbnails _ thumbnailData ->
-                    makePage thumbnailData
-
-                FullSize _ fullSizeData ->
-                    makePage fullSizeData.thumbnailData
-
-                _ ->
-                    makePage (makeThumbnailData "")
-
-        Nothing ->
-            case imageSrc of
-                Nothing ->
-                    NotFound
-
-                Just existingSrc ->
-                    makeFullSize
-                        { focus = SelectList.singleton existingSrc
-                        , thumbnailData = makeThumbnailData ""
-                        }
+toPage : Url -> Page
+toPage url =
+    Maybe.withDefault NotFound (Url.parse route url)
 
 
 makeHeaderState selected =
     { selected = selected, hovered = Nothing, displayContact = False }
 
 
+makeAbout : Page
 makeAbout =
-    About (makeHeaderState "About")
+    About (makeHeaderState headerTitle.about)
 
 
+makeResume : Page
 makeResume =
-    Resume (makeHeaderState "Resume")
+    Resume (makeHeaderState headerTitle.resume)
 
 
+makeThumbnails : String -> Page
 makeThumbnails category =
-    Thumbnails (makeHeaderState "Portfolio") (makeThumbnailData category)
+    Thumbnails (makeHeaderState headerTitle.portfolio) (makeThumbnailData category)
 
 
-makeFullSize =
-    FullSize (makeHeaderState "Portfolio")
+makeThumbnailData : String -> ThumbnailData
+makeThumbnailData category =
+    { category = category
+    , listing = NotAsked
+    }
+
+
+makeFullSize : String -> String -> Page
+makeFullSize category resource =
+    FullSize (makeHeaderState headerTitle.portfolio)
+        { category = category
+        , resource = resource
+        , contents = NotAsked
+        }
 
 
 homeUrl : String
@@ -124,9 +102,9 @@ thumbnailsUrl category =
     Builder.absolute [ "portfolio", category ] []
 
 
-fullSizeUrl : String -> String
-fullSizeUrl imageSrc =
-    Builder.absolute [ "portfolio", "full" ] [ Builder.string "image" imageSrc ]
+fullSizeUrl : String -> String -> String
+fullSizeUrl category imageSrc =
+    Builder.absolute [ "portfolio", category, "full" ] [ Builder.string "image" imageSrc ]
 
 
 aboutUrl : String
@@ -144,18 +122,14 @@ assetUrl src =
     Builder.absolute [ "assets", src ] []
 
 
-queryUrl : String
-queryUrl =
-    Builder.crossOrigin "https://andrewdilmore.com" [ "query" ] []
+thumbnailQueryUrl : String -> String
+thumbnailQueryUrl category =
+    Builder.crossOrigin "https://andrewdilmore.com" [ "query", "thumbnails", category ] []
 
 
-thumbnailUrl : String -> String
-thumbnailUrl imagePath =
-    let
-        parts =
-            String.split "/" imagePath
-    in
-    Builder.absolute ("thumbnails" :: parts) []
+fullQueryUrl : String -> String -> String
+fullQueryUrl category resource =
+    Builder.crossOrigin "https://andrewdilmore.com" [ "query", "full", category, resource ] []
 
 
 imagePrefix : String
@@ -176,7 +150,6 @@ type alias Model =
     { key : Navigation.Key
     , viewport : Viewport
     , page : Page
-    , dirListing : WebData DirListing
     }
 
 
@@ -206,127 +179,59 @@ type alias HeaderState =
 
 
 type alias FullSizeData =
-    { thumbnailData : ThumbnailData
-    , focus : SelectList String
+    { category : String
+    , resource : String
+    , contents : WebData PortfolioFolder
     }
+
+
+type alias PortfolioFolder =
+    List PortfolioFile
+
+
+type PortfolioFile
+    = PortfolioImage String
+    | PortfolioText String
 
 
 type alias ThumbnailData =
     { category : String
+    , listing : WebData CategoryListing
     }
 
 
-type alias DirListing =
-    Dict String DirData
+type alias CategoryListing =
+    Dict String (List ThumbnailInfo)
 
 
-type alias DirData =
-    { files : List String
-    , subDirs : List String
+type alias ThumbnailInfo =
+    { thumbnail : String
+    , resourceQuery : String
     }
 
 
 init : { viewport : { width : Int, height : Int } } -> Url -> Navigation.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
+        initialPage =
+            toPage url
+
         initialModel =
             { key = key
             , viewport = toViewport flags.viewport
-            , page = Home Nothing
-            , dirListing = NotAsked
+            , page = initialPage
             }
     in
-    ( { initialModel | page = toPage initialModel url }
-    , Cmd.batch
-        [ requestDirListing
-        , requestScene
-        ]
-    )
+    ( initialModel, Cmd.batch [ requestScene, pageRequests initialPage ] )
 
 
 toViewport dimensions =
     { width = dimensions.width
     , height = dimensions.height
-    , sceneWidth = dimensions.width
-    , sceneHeight = dimensions.height
+    , sceneWidth = dimensions.width -- initial guess, awaiting response
+    , sceneHeight = dimensions.height -- initial guess, awaiting response
     , device = classifyDevice dimensions
     }
-
-
-
--- FUNCTIONS FOR DIRECTORY ##########################################
-
-
-filesInDir : String -> DirListing -> List String
-filesInDir dir listing =
-    let
-        currentDir =
-            listing
-                |> Dict.get dir
-                |> Maybe.withDefault (DirData [] [])
-
-        subFiles =
-            currentDir.subDirs
-                |> List.map (\subDir -> filesInDir subDir listing)
-                |> List.concat
-    in
-    currentDir.files ++ subFiles
-
-
-makeFullSizeData : DirListing -> ThumbnailData -> String -> Maybe FullSizeData
-makeFullSizeData listing thumbnailData current =
-    let
-        tryFocus ( start, end ) =
-            case end of
-                [] ->
-                    Nothing
-
-                head :: tail ->
-                    Just (SelectList.fromLists start head tail)
-
-        toData focus =
-            { focus = focus
-            , thumbnailData = thumbnailData
-            }
-    in
-    listing
-        |> filesInDir (imageDirectory thumbnailData.category)
-        |> List.splitWhen (\file -> file == current)
-        |> Maybe.andThen tryFocus
-        |> Maybe.map toData
-
-
-makeThumbnailData : String -> ThumbnailData
-makeThumbnailData category =
-    ThumbnailData category
-
-
-nextImage : Navigation.Key -> FullSizeData -> ( FullSizeData, Cmd Msg )
-nextImage key data =
-    let
-        newFocus =
-            SelectList.attempt (SelectList.selectBy 1) data.focus
-
-        newUrl =
-            newFocus
-                |> SelectList.selected
-                |> fullSizeUrl
-    in
-    ( { data | focus = newFocus }, Navigation.pushUrl key newUrl )
-
-
-prevImage : Navigation.Key -> FullSizeData -> ( FullSizeData, Cmd Msg )
-prevImage key data =
-    let
-        newFocus =
-            SelectList.attempt (SelectList.selectBy -1) data.focus
-
-        newUrl =
-            newFocus
-                |> SelectList.selected
-                |> fullSizeUrl
-    in
-    ( { data | focus = newFocus }, Navigation.pushUrl key newUrl )
 
 
 
@@ -343,11 +248,8 @@ type Msg
     | MouseLeaveLink
     | EnterContact
     | LeaveContact
-    | GotDirListing (Result Http.Error DirListing)
-    | OpenImage String
-    | NextImage
-    | PrevImage
-    | CloseImage
+    | GotThumbnailResponse (Result Http.Error ThumbnailDataResponse)
+    | GotFullResponse (Result Http.Error FullDataResponse)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -391,7 +293,7 @@ update msg model =
         ChangedUrl url ->
             let
                 page =
-                    toPage model url
+                    toPage url
 
                 oldViewport =
                     model.viewport
@@ -432,65 +334,29 @@ update msg model =
             in
             ( { model | page = newPage }, Cmd.none )
 
-        GotDirListing result ->
-            let
-                newDirListing =
-                    RemoteData.fromResult result
+        GotThumbnailResponse result ->
+            case model.page of
+                Thumbnails _ data ->
+                    let
+                        newPage =
+                            thumbnailPageFromResponse data.category result
+                    in
+                    ( { model | page = newPage }, requestScene )
 
-                newModel =
-                    { model | dirListing = newDirListing }
+                _ ->
+                    ( model, requestScene )
 
-                newPage =
-                    case newModel.page of
-                        FullSize _ fullSizeData ->
-                            toFullSizePage
-                                newModel
-                                (Just (SelectList.selected fullSizeData.focus))
-
-                        _ ->
-                            newModel.page
-            in
-            ( { newModel | page = newPage }, requestScene )
-
-        OpenImage img ->
-            let
-                newPage =
-                    toFullSizePage model (Just img)
-            in
-            ( { model | page = newPage }, Cmd.none )
-
-        NextImage ->
+        GotFullResponse result ->
             case model.page of
                 FullSize _ data ->
                     let
-                        ( newData, cmd ) =
-                            nextImage model.key data
-
                         newPage =
-                            makeFullSize newData
+                            fullPageFromResponse data.category data.resource result
                     in
-                    ( { model | page = newPage }, cmd )
+                    ( { model | page = newPage }, requestScene )
 
                 _ ->
-                    ( model, Cmd.none )
-
-        PrevImage ->
-            case model.page of
-                FullSize _ data ->
-                    let
-                        ( newData, cmd ) =
-                            prevImage model.key data
-
-                        newPage =
-                            makeFullSize newData
-                    in
-                    ( { model | page = newPage }, cmd )
-
-                _ ->
-                    ( model, Cmd.none )
-
-        CloseImage ->
-            ( model, Navigation.pushUrl model.key (thumbnailsUrl "") )
+                    ( model, requestScene )
 
 
 updateHovered : Maybe String -> Page -> Page
@@ -505,8 +371,8 @@ updateHovered hovered page =
         Resume headerState ->
             Resume { headerState | hovered = hovered }
 
-        Thumbnails headerState thumbnailData ->
-            Thumbnails { headerState | hovered = hovered } thumbnailData
+        Thumbnails headerState data ->
+            Thumbnails { headerState | hovered = hovered } data
 
         FullSize headerState data ->
             FullSize { headerState | hovered = hovered } data
@@ -527,8 +393,8 @@ updateDisplayContact displayContact page =
         Resume headerState ->
             Resume { headerState | displayContact = displayContact }
 
-        Thumbnails headerState thumbnailData ->
-            Thumbnails { headerState | displayContact = displayContact } thumbnailData
+        Thumbnails headerState data ->
+            Thumbnails { headerState | displayContact = displayContact } data
 
         FullSize headerState data ->
             FullSize { headerState | displayContact = displayContact } data
@@ -593,7 +459,7 @@ bodyElementDesktop model =
                 (fullSizeElement model.viewport data)
 
         NotFound ->
-            text "Not found"
+            notFoundElement
 
 
 bodyElementMobile : Model -> Element Msg
@@ -615,7 +481,7 @@ bodyElementMobile model =
             usualBodyMobile model.viewport headerState (thumbnailListMobileElement model)
 
         NotFound ->
-            text "Not found"
+            notFoundElement
 
 
 usualBodyDesktop viewport headerState content =
@@ -960,6 +826,11 @@ headerLinkElementMobile viewport headerState content =
         { label = text content.title
         , url = content.url
         }
+
+
+notFoundElement : Element Msg
+notFoundElement =
+    text "Not found"
 
 
 
@@ -1385,12 +1256,12 @@ thumbnailListDesktopElement model =
     in
     case model.page of
         Thumbnails _ thumbnailData ->
-            case model.dirListing of
-                Success dirListing ->
-                    dirListing
-                        |> filesInDir (imageDirectory thumbnailData.category)
-                        |> chunksOf rowLength
-                        |> thumbnailColumn model.viewport thumbnailData.category
+            case thumbnailData.listing of
+                Success listing ->
+                    listing
+                        |> Dict.get thumbnailData.category
+                        |> Maybe.map (thumbnailColumn model.viewport thumbnailData.category << chunksOf rowLength)
+                        |> Maybe.withDefault notFoundElement
 
                 NotAsked ->
                     localLoaderElement
@@ -1406,14 +1277,14 @@ thumbnailListDesktopElement model =
             unknownPageErrorElement
 
 
-thumbnailColumn : Viewport -> String -> List (List String) -> Element Msg
+thumbnailColumn : Viewport -> String -> List (List ThumbnailInfo) -> Element Msg
 thumbnailColumn viewport currentCategory rows =
     let
         insertHeader list =
             portfolioCategoryListElement currentCategory :: list
     in
     rows
-        |> List.map (thumbnailRow viewport)
+        |> List.map (thumbnailRow currentCategory viewport)
         |> insertHeader
         |> column [ centerX, spacing 20 ]
 
@@ -1456,15 +1327,15 @@ portfolioCategoryElement currentCategory info =
         }
 
 
-thumbnailRow : Viewport -> List String -> Element Msg
-thumbnailRow viewport srcs =
-    srcs
-        |> List.map (thumbnailElement viewport)
+thumbnailRow : String -> Viewport -> List ThumbnailInfo -> Element Msg
+thumbnailRow category viewport thumbnailInfos =
+    thumbnailInfos
+        |> List.map (thumbnailElement category viewport)
         |> row [ spacing 20 ]
 
 
-thumbnailElement : Viewport -> String -> Element Msg
-thumbnailElement viewport src =
+thumbnailElement : String -> Viewport -> ThumbnailInfo -> Element Msg
+thumbnailElement category viewport thumbnailInfo =
     let
         sideLength =
             ((viewport.width // 2) - 100) // rowLength
@@ -1474,8 +1345,8 @@ thumbnailElement viewport src =
         , centerY
         , centerX
         ]
-        { src = thumbnailUrl src, description = "" }
-        |> (\img -> link [ centerY ] { label = img, url = fullSizeUrl src })
+        { src = thumbnailInfo.thumbnail, description = "" }
+        |> (\img -> link [ centerY ] { label = img, url = fullSizeUrl category thumbnailInfo.resourceQuery })
         |> el
             [ width (px sideLength)
             , height (px sideLength)
@@ -1501,11 +1372,12 @@ thumbnailListMobileElement model =
     in
     case model.page of
         Thumbnails _ thumbnailData ->
-            case model.dirListing of
-                Success dirListing ->
-                    dirListing
-                        |> filesInDir (imageDirectory thumbnailData.category)
-                        |> List.map thumbnailElementMobile
+            case thumbnailData.listing of
+                Success listing ->
+                    listing
+                        |> Dict.get thumbnailData.category
+                        |> Maybe.map (List.map thumbnailElementMobile)
+                        |> Maybe.withDefault [ notFoundElement ]
                         |> insertHeader thumbnailData.category
                         |> column
                             [ paddingXY 20 0
@@ -1527,15 +1399,15 @@ thumbnailListMobileElement model =
                 |> el [ centerX, centerY ]
 
 
-thumbnailElementMobile : String -> Element Msg
-thumbnailElementMobile src =
+thumbnailElementMobile : ThumbnailInfo -> Element Msg
+thumbnailElementMobile thumbnailInfo =
     image
         [ width fill
         , height shrink
         , centerY
         , centerX
         ]
-        { src = src, description = "" }
+        { src = thumbnailInfo.thumbnail, description = "" }
 
 
 portfolioCategoryListMobileElement : String -> Element Msg
@@ -1590,45 +1462,10 @@ fullSizeElement viewport data =
                 { src = assetUrl "Arrow.png", description = "" }
 
         leftArrow =
-            if not (SelectList.isHead data.focus) then
-                arrowImage
-                    |> el
-                        [ centerY
-                        , centerX
-                        , Events.onClick PrevImage
-                        , alignLeft
-                        , width (px arrowWidth)
-                        , height shrink
-                        , pointer
-                        , rotate pi
-                        , moveUp 10
-                        , alpha 0.6
-                        , mouseOver [ alpha 1 ]
-                        ]
-                    |> el [ width (px arrowWidth), height fill ]
-
-            else
-                el [ width (px arrowWidth) ] none
+            el [ width (px arrowWidth) ] none
 
         rightArrow =
-            if not (SelectList.isLast data.focus) then
-                arrowImage
-                    |> el
-                        [ centerY
-                        , centerX
-                        , Events.onClick NextImage
-                        , alignRight
-                        , height shrink
-                        , width (px arrowWidth)
-                        , pointer
-                        , moveUp 10
-                        , alpha 0.6
-                        , mouseOver [ alpha 1 ]
-                        ]
-                    |> el [ width (px arrowWidth), height fill ]
-
-            else
-                el [ width (px arrowWidth) ] none
+            el [ width (px arrowWidth) ] none
     in
     [ leftArrow
     , fullSizeImageElement viewport data
@@ -1656,10 +1493,10 @@ fullSizeImageElement viewport data =
         [ width (shrink |> maximum maxWidth)
         , height (shrink |> maximum maxHeight)
         ]
-        { src = SelectList.selected data.focus
+        { src = ""
         , description = ""
         }
-        |> (\img -> link [ centerX, centerY ] { label = img, url = thumbnailsUrl data.thumbnailData.category })
+        |> (\img -> link [ centerX, centerY ] { label = img, url = thumbnailsUrl data.category })
         |> el [ centerX, centerY, width (px maxWidth) ]
 
 
@@ -1802,29 +1639,106 @@ futuraBold =
 
 
 
--- REQUESTS ####################################################################
+-- REQUESTS #####################################################################
 
 
-requestDirListing : Cmd Msg
-requestDirListing =
-    Http.get { url = queryUrl, expect = Http.expectJson GotDirListing decodeDirListing }
+pageRequests : Page -> Cmd Msg
+pageRequests page =
+    case page of
+        Thumbnails _ data ->
+            requestThumbnailData { category = data.category }
+
+        FullSize _ data ->
+            requestFullData { category = data.category, resource = data.resource }
+
+        _ ->
+            Cmd.none
 
 
-decodeDirListing : Decode.Decoder DirListing
-decodeDirListing =
-    Decode.dict decodeDirData
+type alias ThumbnailDataResponse =
+    { category : String
+    , listing : CategoryListing
+    }
 
 
-decodeDirData : Decode.Decoder DirData
-decodeDirData =
+type alias FullDataResponse =
+    { category : String
+    , resource : String
+    , contents : PortfolioFolder
+    }
+
+
+requestThumbnailData : { category : String } -> Cmd Msg
+requestThumbnailData request =
+    Http.get
+        { url = thumbnailQueryUrl request.category
+        , expect = Http.expectJson GotThumbnailResponse decodeThumbnailData
+        }
+
+
+requestFullData : { category : String, resource : String } -> Cmd Msg
+requestFullData request =
+    Http.get
+        { url = fullQueryUrl request.category request.resource
+        , expect = Http.expectJson GotFullResponse decodeFullData
+        }
+
+
+decodeThumbnailData : Decode.Decoder ThumbnailDataResponse
+decodeThumbnailData =
+    Decode.map2 ThumbnailDataResponse
+        (Decode.field "category" Decode.string)
+        (Decode.field "listing" decodeCategoryListing)
+
+
+decodeCategoryListing : Decode.Decoder CategoryListing
+decodeCategoryListing =
+    Decode.dict (Decode.list decodeThumbnailInfo)
+
+
+decodeThumbnailInfo : Decode.Decoder ThumbnailInfo
+decodeThumbnailInfo =
+    Decode.map2 ThumbnailInfo
+        (Decode.field "thumbnail" Decode.string)
+        (Decode.field "resourceQuery" Decode.string)
+
+
+decodeFullData : Decode.Decoder FullDataResponse
+decodeFullData =
+    Decode.map3 FullDataResponse
+        (Decode.field "category" Decode.string)
+        (Decode.field "resource" Decode.string)
+        (Decode.field "contents" decodePortfolioFolder)
+
+
+decodePortfolioFolder : Decode.Decoder PortfolioFolder
+decodePortfolioFolder =
+    Decode.list decodePortfolioFile
+
+
+decodePortfolioFile : Decode.Decoder PortfolioFile
+decodePortfolioFile =
     let
-        decodeFiles =
-            Decode.field "files" (Decode.map (List.map (\f -> "/" ++ f)) (Decode.list Decode.string))
+        decodePortfolioImage =
+            Decode.field "type" (decodeSpecific "image")
+                |> Decode.andThen
+                    (always <|
+                        Decode.map PortfolioImage <|
+                            Decode.field "src" Decode.string
+                    )
 
-        decodeSubDirs =
-            Decode.field "subdirs" (Decode.list Decode.string)
+        decodePortfolioText =
+            Decode.field "type" (decodeSpecific "text")
+                |> Decode.andThen
+                    (always <|
+                        Decode.map PortfolioText <|
+                            Decode.field "text" Decode.string
+                    )
     in
-    Decode.map2 DirData decodeFiles decodeSubDirs
+    Decode.oneOf
+        [ decodePortfolioImage
+        , decodePortfolioText
+        ]
 
 
 requestScene : Cmd Msg
@@ -1838,8 +1752,31 @@ requestScene =
         Dom.getViewport
 
 
+thumbnailPageFromResponse : String -> Result Http.Error ThumbnailDataResponse -> Page
+thumbnailPageFromResponse category response =
+    let
+        data =
+            { category = category
+            , listing = RemoteData.fromResult (Result.map .listing response)
+            }
+    in
+    Thumbnails (makeHeaderState headerTitle.portfolio) data
 
--- UTILITY #####################################################################
+
+fullPageFromResponse : String -> String -> Result Http.Error FullDataResponse -> Page
+fullPageFromResponse category resource response =
+    let
+        data =
+            { category = category
+            , resource = resource
+            , contents = RemoteData.fromResult (Result.map .contents response)
+            }
+    in
+    FullSize (makeHeaderState headerTitle.portfolio) data
+
+
+
+-- UTILITY ######################################################################
 -- CONSTANTS
 
 
@@ -1851,8 +1788,11 @@ rowLength =
     3
 
 
-
--- PURE UTILITY
+headerTitle =
+    { portfolio = "Portfolio"
+    , about = "About"
+    , resume = "Resume"
+    }
 
 
 colors =
@@ -1865,8 +1805,8 @@ colors =
     }
 
 
-debugColors =
-    {}
+
+-- FUNCTIONS
 
 
 chunksOf : Int -> List a -> List (List a)
@@ -1877,39 +1817,6 @@ chunksOf n list =
 
         rest ->
             List.take n list :: chunksOf n rest
-
-
-directoryErrorElement : Http.Error -> Element msg
-directoryErrorElement error =
-    textColumn [ spacing 10, width (px 600) ]
-        [ paragraph []
-            [ text
-                """
-                I got an error trying to get the list of images. You should
-                try to reload the page first. If you still have problems, you
-                can email the website developer, Eric Dilmore, at
-                ericdilmore@gmail.com. Please include the error message below:
-                """
-            ]
-        , text (httpErrorToString error)
-        ]
-
-
-unknownPageErrorElement : Element msg
-unknownPageErrorElement =
-    textColumn [ spacing 10, width (px 600) ]
-        [ paragraph []
-            [ text
-                """
-                I am getting mixed signals for where you are! This is not
-                normal. Clicking Andrew's name at the top of the page should
-                fix this. If you ever find yourself back here, email the
-                website developer, Eric Dilmore, at ericdilmore@gmail.com, and
-                let him know how you got here. That will help this get fixed
-                for good!
-                """
-            ]
-        ]
 
 
 httpErrorToString : Http.Error -> String
@@ -1929,3 +1836,51 @@ httpErrorToString error =
 
         Http.BadBody jsonError ->
             "I didn't understand the response I got from the server. My JSON decoder says:\n" ++ jsonError
+
+
+decodeSpecific : String -> Decode.Decoder ()
+decodeSpecific expected =
+    let
+        verify actual =
+            if expected == actual then
+                Decode.succeed ()
+
+            else
+                Decode.fail
+                    ("Expected \""
+                        ++ expected
+                        ++ "\" but got \""
+                        ++ actual
+                        ++ "\""
+                    )
+    in
+    Decode.string
+        |> Decode.andThen verify
+
+
+directoryErrorElement : Http.Error -> Element msg
+directoryErrorElement error =
+    textColumn [ spacing 10, width (px 600) ]
+        [ paragraph []
+            [ text
+                """
+                I got an error trying to get the list of images. If reloading
+                the page does not fix this error, please contact me and let me
+                know! A more specific error message can be found below:
+                """
+            ]
+        , text (httpErrorToString error)
+        ]
+
+
+unknownPageErrorElement : Element msg
+unknownPageErrorElement =
+    textColumn [ spacing 10, width (px 600) ]
+        [ paragraph []
+            [ text
+                """
+                Congratulations on finding the super-secret page of secrets!
+                Send Andrew Dilmore a message at the contact info listed above.
+                """
+            ]
+        ]
