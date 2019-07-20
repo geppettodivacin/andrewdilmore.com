@@ -103,8 +103,8 @@ thumbnailsUrl category =
 
 
 fullSizeUrl : String -> String -> String
-fullSizeUrl category imageSrc =
-    Builder.absolute [ "portfolio", category, "full" ] [ Builder.string "image" imageSrc ]
+fullSizeUrl category resource =
+    Builder.absolute [ "portfolio", category, "full", resource ] []
 
 
 aboutUrl : String
@@ -201,7 +201,7 @@ type alias ThumbnailData =
 
 
 type alias CategoryListing =
-    Dict String (List ThumbnailInfo)
+    List ThumbnailInfo
 
 
 type alias ThumbnailInfo =
@@ -304,7 +304,7 @@ update msg model =
                         , sceneHeight = oldViewport.height
                     }
             in
-            ( { model | page = page }, requestScene )
+            ( { model | page = page }, Cmd.batch [ requestScene, pageRequests page ] )
 
         MouseOverLink newHovered ->
             let
@@ -1259,9 +1259,8 @@ thumbnailListDesktopElement model =
             case thumbnailData.listing of
                 Success listing ->
                     listing
-                        |> Dict.get thumbnailData.category
-                        |> Maybe.map (thumbnailColumn model.viewport thumbnailData.category << chunksOf rowLength)
-                        |> Maybe.withDefault notFoundElement
+                        |> chunksOf rowLength
+                        |> thumbnailColumn model.viewport thumbnailData.category
 
                 NotAsked ->
                     localLoaderElement
@@ -1375,9 +1374,7 @@ thumbnailListMobileElement model =
             case thumbnailData.listing of
                 Success listing ->
                     listing
-                        |> Dict.get thumbnailData.category
-                        |> Maybe.map (List.map thumbnailElementMobile)
-                        |> Maybe.withDefault [ notFoundElement ]
+                        |> List.map thumbnailElementMobile
                         |> insertHeader thumbnailData.category
                         |> column
                             [ paddingXY 20 0
@@ -1468,7 +1465,12 @@ fullSizeElement viewport data =
             el [ width (px arrowWidth) ] none
     in
     [ leftArrow
-    , fullSizeImageElement viewport data
+    , data.contents
+        |> RemoteData.map
+            (List.map (fullSizeFileElement viewport data.category)
+                >> column [ spacing 10 ]
+            )
+        |> RemoteData.withDefault Element.none
     , rightArrow
     ]
         |> row
@@ -1478,7 +1480,17 @@ fullSizeElement viewport data =
             ]
 
 
-fullSizeImageElement : Viewport -> FullSizeData -> Element Msg
+fullSizeFileElement : Viewport -> String -> PortfolioFile -> Element Msg
+fullSizeFileElement viewport category file =
+    case file of
+        PortfolioImage imageSrc ->
+            fullSizeImageElement viewport { category = category, imageSrc = imageSrc }
+
+        PortfolioText _ ->
+            Element.none
+
+
+fullSizeImageElement : Viewport -> { category : String, imageSrc : String } -> Element Msg
 fullSizeImageElement viewport data =
     let
         maxWidth =
@@ -1493,7 +1505,7 @@ fullSizeImageElement viewport data =
         [ width (shrink |> maximum maxWidth)
         , height (shrink |> maximum maxHeight)
         ]
-        { src = ""
+        { src = data.imageSrc
         , description = ""
         }
         |> (\img -> link [ centerX, centerY ] { label = img, url = thumbnailsUrl data.category })
@@ -1693,7 +1705,7 @@ decodeThumbnailData =
 
 decodeCategoryListing : Decode.Decoder CategoryListing
 decodeCategoryListing =
-    Decode.dict (Decode.list decodeThumbnailInfo)
+    Decode.list decodeThumbnailInfo
 
 
 decodeThumbnailInfo : Decode.Decoder ThumbnailInfo
