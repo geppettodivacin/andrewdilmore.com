@@ -458,8 +458,8 @@ bodyElementDesktop model =
         Resume headerState ->
             usualBodyDesktop model.viewport headerState (resumeElement model.viewport)
 
-        Thumbnails headerState thumbnailData ->
-            usualBodyDesktop model.viewport headerState (thumbnailListDesktopElement model)
+        Thumbnails headerState data ->
+            usualBodyDesktop model.viewport headerState (thumbnailListDesktopElement model.viewport data)
 
         FullSize headerState data ->
             usualBodyDesktop
@@ -483,11 +483,11 @@ bodyElementMobile model =
         Resume headerState ->
             usualBodyMobile model.viewport headerState (resumeElement model.viewport)
 
-        Thumbnails headerState thumbnailData ->
-            usualBodyMobile model.viewport headerState (thumbnailListMobileElement model)
+        Thumbnails headerState data ->
+            usualBodyMobile model.viewport headerState (thumbnailListMobileElement data)
 
         FullSize headerState data ->
-            usualBodyMobile model.viewport headerState (thumbnailListMobileElement model)
+            usualBodyMobile model.viewport headerState (fullSizeElement model.viewport data)
 
         NotFound ->
             notFoundElement
@@ -1255,34 +1255,29 @@ resumeElement viewport =
 -- Thumbnail List
 
 
-thumbnailListDesktopElement : Model -> Element Msg
-thumbnailListDesktopElement model =
+thumbnailListDesktopElement : Viewport -> ThumbnailData -> Element Msg
+thumbnailListDesktopElement viewport data =
     let
         localLoaderElement =
             loaderElement
                 |> el [ centerX, centerY ]
                 |> el [ width fill, height fill ]
     in
-    case model.page of
-        Thumbnails _ thumbnailData ->
-            case thumbnailData.listing of
-                Success listing ->
-                    listing
-                        |> chunksOf rowLength
-                        |> thumbnailColumn model.viewport thumbnailData.category
+    case data.listing of
+        Success listing ->
+            listing
+                |> chunksOf rowLength
+                |> thumbnailColumn viewport data.category
 
-                NotAsked ->
-                    localLoaderElement
+        NotAsked ->
+            localLoaderElement
 
-                Loading ->
-                    localLoaderElement
+        Loading ->
+            localLoaderElement
 
-                Failure error ->
-                    directoryErrorElement error
-                        |> el [ centerX, centerY ]
-
-        _ ->
-            unknownPageErrorElement
+        Failure error ->
+            directoryErrorElement error
+                |> el [ centerX, centerY ]
 
 
 thumbnailColumn : Viewport -> String -> List (List ThumbnailInfo) -> Element Msg
@@ -1367,8 +1362,8 @@ thumbnailElement category viewport thumbnailInfo =
 -- Mobile Thumbnail List
 
 
-thumbnailListMobileElement : Model -> Element Msg
-thumbnailListMobileElement model =
+thumbnailListMobileElement : ThumbnailData -> Element Msg
+thumbnailListMobileElement data =
     let
         localLoaderElement =
             loaderElement
@@ -1378,42 +1373,35 @@ thumbnailListMobileElement model =
         insertHeader category list =
             portfolioCategoryListMobileElement category :: list
     in
-    case model.page of
-        Thumbnails _ thumbnailData ->
-            case thumbnailData.listing of
-                Success listing ->
-                    listing
-                        |> List.map thumbnailElementMobile
-                        |> insertHeader thumbnailData.category
-                        |> column
-                            [ paddingXY 20 0
-                            , width fill
-                            , spacing 30
-                            ]
+    case data.listing of
+        Success listing ->
+            listing
+                |> List.map (thumbnailElementMobile data.category)
+                |> insertHeader data.category
+                |> column
+                    [ paddingXY 20 0
+                    , width fill
+                    , spacing 30
+                    ]
 
-                NotAsked ->
-                    localLoaderElement
+        NotAsked ->
+            localLoaderElement
 
-                Loading ->
-                    localLoaderElement
+        Loading ->
+            localLoaderElement
 
-                Failure error ->
-                    directoryErrorElement error
-
-        _ ->
-            unknownPageErrorElement
-                |> el [ centerX, centerY ]
+        Failure error ->
+            directoryErrorElement error
 
 
-thumbnailElementMobile : ThumbnailInfo -> Element Msg
-thumbnailElementMobile thumbnailInfo =
+thumbnailElementMobile : String -> ThumbnailInfo -> Element Msg
+thumbnailElementMobile category thumbnailInfo =
     image
         [ width fill
         , height shrink
-        , centerY
-        , centerX
         ]
         { src = thumbnailInfo.thumbnail, description = "" }
+        |> (\img -> link [ centerX, centerY ] { label = img, url = fullSizeUrl category thumbnailInfo.resourceQuery })
 
 
 portfolioCategoryListMobileElement : String -> Element Msg
@@ -1479,25 +1467,23 @@ fullSizeElement viewport data =
                     ]
                 |> el [ width (px arrowWidth), height fill ]
 
-        backText =
-            text "Thumbnails"
+        backLink elements =
+            link
+                ([ alpha 0.6
+                 , mouseOver [ alpha 1 ]
+                 , Font.size (scaled 4)
+                 ]
+                    ++ futuraBold
+                )
+                { url = thumbnailsUrl data.category
+                , label = row [ spacing 10 ] elements
+                }
 
         backButton =
             [ leftArrow
-            , backText
+            , text "Thumbnails"
             ]
-                |> (\elements ->
-                        link
-                            ([ alpha 0.6
-                             , mouseOver [ alpha 1 ]
-                             , Font.size (scaled 4)
-                             ]
-                                ++ futuraBold
-                            )
-                            { url = thumbnailsUrl data.category
-                            , label = row [ spacing 10 ] elements
-                            }
-                   )
+                |> backLink
     in
     [ backButton
     , data.contents
@@ -1527,9 +1513,14 @@ fullSizeImageElement : Viewport -> { category : String, imageSrc : String } -> E
 fullSizeImageElement viewport data =
     let
         maxWidth =
-            max
-                (viewport.width - 650)
-                ((viewport.width // 2) - 120)
+            case classifySimpleDevice viewport.device of
+                FullDesktop ->
+                    max
+                        (viewport.width - 650)
+                        ((viewport.width // 2) - 120)
+
+                Mobile ->
+                    viewport.width
 
         maxHeight =
             viewport.height - 200
@@ -1915,17 +1906,4 @@ directoryErrorElement error =
                 """
             ]
         , text (httpErrorToString error)
-        ]
-
-
-unknownPageErrorElement : Element msg
-unknownPageErrorElement =
-    textColumn [ spacing 10, width (px 600) ]
-        [ paragraph []
-            [ text
-                """
-                Congratulations on finding the super-secret page of secrets!
-                Send Andrew Dilmore a message at the contact info listed above.
-                """
-            ]
         ]
