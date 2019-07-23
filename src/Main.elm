@@ -52,6 +52,11 @@ route =
         ]
 
 
+isImageUrl : Url -> Bool
+isImageUrl url =
+    String.startsWith "/images" url.path
+
+
 toPage : Url -> Page
 toPage url =
     Maybe.withDefault NotFound (Url.parse route url)
@@ -285,7 +290,11 @@ update msg model =
         ClickedLink request ->
             case request of
                 Browser.Internal url ->
-                    ( model, Navigation.pushUrl model.key (Url.toString url) )
+                    if isImageUrl url then
+                        ( model, Navigation.load (Url.toString url) )
+
+                    else
+                        ( model, Navigation.pushUrl model.key (Url.toString url) )
 
                 Browser.External href ->
                     ( model, Navigation.load href )
@@ -1452,31 +1461,55 @@ fullSizeElement : Viewport -> FullSizeData -> Element Msg
 fullSizeElement viewport data =
     let
         arrowWidth =
-            80
+            50
 
         arrowImage =
             image [ width (px arrowWidth) ]
                 { src = assetUrl "Arrow.png", description = "" }
 
         leftArrow =
-            el [ width (px arrowWidth) ] none
+            arrowImage
+                |> el
+                    [ centerY
+                    , centerX
+                    , alignLeft
+                    , width (px arrowWidth)
+                    , height shrink
+                    , rotate pi
+                    ]
+                |> el [ width (px arrowWidth), height fill ]
 
-        rightArrow =
-            el [ width (px arrowWidth) ] none
+        backText =
+            text "Thumbnails"
+
+        backButton =
+            [ leftArrow
+            , backText
+            ]
+                |> (\elements ->
+                        link
+                            ([ alpha 0.6
+                             , mouseOver [ alpha 1 ]
+                             , Font.size (scaled 4)
+                             ]
+                                ++ futuraBold
+                            )
+                            { url = thumbnailsUrl data.category
+                            , label = row [ spacing 10 ] elements
+                            }
+                   )
     in
-    [ leftArrow
+    [ backButton
     , data.contents
         |> RemoteData.map
             (List.map (fullSizeFileElement viewport data.category)
                 >> column [ spacing 10 ]
             )
         |> RemoteData.withDefault Element.none
-    , rightArrow
     ]
-        |> row
+        |> column
             [ centerX
-            , height fill
-            , spacing 20
+            , spacing 10
             ]
 
 
@@ -1508,7 +1541,7 @@ fullSizeImageElement viewport data =
         { src = data.imageSrc
         , description = ""
         }
-        |> (\img -> link [ centerX, centerY ] { label = img, url = thumbnailsUrl data.category })
+        |> (\img -> link [ centerX, centerY ] { label = img, url = data.imageSrc })
         |> el [ centerX, centerY, width (px maxWidth) ]
 
 
