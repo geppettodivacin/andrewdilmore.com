@@ -459,7 +459,7 @@ bodyElementDesktop model =
             usualBodyDesktop model.viewport headerState (resumeElement model.viewport)
 
         Thumbnails headerState data ->
-            usualBodyDesktop model.viewport headerState (thumbnailListDesktopElement model.viewport data)
+            usualBodyDesktop model.viewport headerState (thumbnailListElement model.viewport data)
 
         FullSize headerState data ->
             usualBodyDesktop
@@ -484,7 +484,7 @@ bodyElementMobile model =
             usualBodyMobile model.viewport headerState (resumeElement model.viewport)
 
         Thumbnails headerState data ->
-            usualBodyMobile model.viewport headerState (thumbnailListMobileElement data)
+            usualBodyMobile model.viewport headerState (thumbnailListElement model.viewport data)
 
         FullSize headerState data ->
             usualBodyMobile model.viewport headerState (fullSizeElement model.viewport data)
@@ -1255,8 +1255,8 @@ resumeElement viewport =
 -- Thumbnail List
 
 
-thumbnailListDesktopElement : Viewport -> ThumbnailData -> Element Msg
-thumbnailListDesktopElement viewport data =
+thumbnailListElement : Viewport -> ThumbnailData -> Element Msg
+thumbnailListElement viewport data =
     let
         localLoaderElement =
             loaderElement
@@ -1266,7 +1266,7 @@ thumbnailListDesktopElement viewport data =
     case data.listing of
         Success listing ->
             listing
-                |> chunksOf rowLength
+                |> chunksOf (rowLength viewport)
                 |> thumbnailColumn viewport data.category
 
         NotAsked ->
@@ -1283,8 +1283,11 @@ thumbnailListDesktopElement viewport data =
 thumbnailColumn : Viewport -> String -> List (List ThumbnailInfo) -> Element Msg
 thumbnailColumn viewport currentCategory rows =
     let
+        deviceClass =
+            classifySimpleDevice viewport.device
+
         insertHeader list =
-            portfolioCategoryListElement currentCategory :: list
+            portfolioCategoryListElement deviceClass currentCategory :: list
     in
     rows
         |> List.map (thumbnailRow currentCategory viewport)
@@ -1292,23 +1295,32 @@ thumbnailColumn viewport currentCategory rows =
         |> column [ centerX, spacing 20 ]
 
 
-portfolioCategoryListElement : String -> Element Msg
-portfolioCategoryListElement currentCategory =
+portfolioCategoryListElement : SimpleDeviceClass -> String -> Element Msg
+portfolioCategoryListElement deviceClass currentCategory =
+    let
+        elementSpacing =
+            case deviceClass of
+                Mobile ->
+                    35
+
+                FullDesktop ->
+                    20
+    in
     [ { category = "design", label = "Graphic Design" }
     , { category = "photography", label = "Photography" }
     ]
-        |> List.map (portfolioCategoryElement currentCategory)
+        |> List.map (portfolioCategoryElement deviceClass currentCategory)
         |> row
-            [ spacing 20
+            [ spacing elementSpacing
             , centerX
             ]
 
 
-portfolioCategoryElement : String -> { category : String, label : String } -> Element Msg
-portfolioCategoryElement currentCategory info =
+portfolioCategoryElement : SimpleDeviceClass -> String -> { category : String, label : String } -> Element Msg
+portfolioCategoryElement deviceClass currentCategory info =
     let
         isSelected =
-            Debug.log "Category" info.category == Debug.log "Current" currentCategory
+            info.category == currentCategory
 
         fontAttributes =
             if isSelected then
@@ -1316,11 +1328,19 @@ portfolioCategoryElement currentCategory info =
 
             else
                 futuraMedium ++ [ Font.color colors.darkGray ]
+
+        fontSize =
+            case deviceClass of
+                Mobile ->
+                    scaled 5
+
+                FullDesktop ->
+                    scaled 4
     in
     link
         ([ centerX
          , centerY
-         , Font.size (scaled 4)
+         , Font.size fontSize
          , mouseOver [ Font.color colors.black ]
          ]
             ++ fontAttributes
@@ -1334,111 +1354,54 @@ thumbnailRow : String -> Viewport -> List ThumbnailInfo -> Element Msg
 thumbnailRow category viewport thumbnailInfos =
     thumbnailInfos
         |> List.map (thumbnailElement category viewport)
-        |> row [ spacing 20 ]
+        |> row [ centerX, spacing 20 ]
 
 
 thumbnailElement : String -> Viewport -> ThumbnailInfo -> Element Msg
 thumbnailElement category viewport thumbnailInfo =
     let
+        currentRowLength =
+            rowLength viewport
+
+        margin =
+            case classifySimpleDevice viewport.device of
+                Mobile ->
+                    viewport.width // 4
+
+                FullDesktop ->
+                    100 + (viewport.width // 2)
+
         sideLength =
-            ((viewport.width // 2) - 100) // rowLength
+            (viewport.width - margin) // rowLength viewport
+
+        imageWidth =
+            if currentRowLength > 1 then
+                shrink |> maximum sideLength
+
+            else
+                px sideLength
+
+        frameHeight =
+            if currentRowLength > 1 then
+                px sideLength
+
+            else
+                shrink
     in
     image
-        [ width (shrink |> maximum sideLength)
+        [ width imageWidth
         , centerY
         , centerX
         ]
         { src = thumbnailInfo.thumbnail, description = "" }
-        |> (\img -> link [ centerY ] { label = img, url = fullSizeUrl category thumbnailInfo.resourceQuery })
+        |> (\img -> link [ centerX, centerY ] { label = img, url = fullSizeUrl category thumbnailInfo.resourceQuery })
         |> el
             [ width (px sideLength)
-            , height (px sideLength)
+            , height frameHeight
             , centerY
+            , centerX
             , clip
             ]
-
-
-
--- Mobile Thumbnail List
-
-
-thumbnailListMobileElement : ThumbnailData -> Element Msg
-thumbnailListMobileElement data =
-    let
-        localLoaderElement =
-            loaderElement
-                |> el [ centerX, centerY ]
-                |> el [ width fill, height fill ]
-
-        insertHeader category list =
-            portfolioCategoryListMobileElement category :: list
-    in
-    case data.listing of
-        Success listing ->
-            listing
-                |> List.map (thumbnailElementMobile data.category)
-                |> insertHeader data.category
-                |> column
-                    [ paddingXY 20 0
-                    , width fill
-                    , spacing 30
-                    ]
-
-        NotAsked ->
-            localLoaderElement
-
-        Loading ->
-            localLoaderElement
-
-        Failure error ->
-            directoryErrorElement error
-
-
-thumbnailElementMobile : String -> ThumbnailInfo -> Element Msg
-thumbnailElementMobile category thumbnailInfo =
-    image
-        [ width fill
-        , height shrink
-        ]
-        { src = thumbnailInfo.thumbnail, description = "" }
-        |> (\img -> link [ centerX, centerY ] { label = img, url = fullSizeUrl category thumbnailInfo.resourceQuery })
-
-
-portfolioCategoryListMobileElement : String -> Element Msg
-portfolioCategoryListMobileElement currentCategory =
-    [ { category = "design", label = "Graphic Design" }
-    , { category = "photography", label = "Photography" }
-    ]
-        |> List.map (portfolioCategoryMobileElement currentCategory)
-        |> row
-            [ spacing 35
-            , centerX
-            ]
-
-
-portfolioCategoryMobileElement : String -> { category : String, label : String } -> Element Msg
-portfolioCategoryMobileElement currentCategory info =
-    let
-        isSelected =
-            Debug.log "Category" info.category == Debug.log "Current" currentCategory
-
-        fontAttributes =
-            if isSelected then
-                futuraBold ++ [ Font.color colors.black ]
-
-            else
-                futuraMedium ++ [ Font.color colors.darkGray ]
-    in
-    link
-        ([ centerX
-         , centerY
-         , Font.size (scaled 5)
-         ]
-            ++ fontAttributes
-        )
-        { url = thumbnailsUrl info.category
-        , label = text info.label
-        }
 
 
 
@@ -1820,8 +1783,14 @@ pi =
     3.14159
 
 
-rowLength =
-    3
+rowLength : Viewport -> number
+rowLength viewport =
+    case classifySimpleDevice viewport.device of
+        FullDesktop ->
+            3
+
+        Mobile ->
+            break { break = 890, high = 2, low = 1 } viewport.width
 
 
 headerTitle =
