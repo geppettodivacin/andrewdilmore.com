@@ -1411,8 +1411,16 @@ thumbnailElement category viewport thumbnailInfo =
 fullSizeElement : Viewport -> FullSizeData -> Element Msg
 fullSizeElement viewport data =
     let
+        deviceClass =
+            classifySimpleDevice viewport.device
+
         arrowWidth =
-            50
+            case deviceClass of
+                Mobile ->
+                    80
+
+                FullDesktop ->
+                    50
 
         arrowImage =
             image [ width (px arrowWidth) ]
@@ -1430,11 +1438,19 @@ fullSizeElement viewport data =
                     ]
                 |> el [ width (px arrowWidth), height fill ]
 
+        backSize =
+            case deviceClass of
+                Mobile ->
+                    scaled 5
+
+                FullDesktop ->
+                    scaled 4
+
         backLink elements =
             link
                 ([ alpha 0.6
                  , mouseOver [ alpha 1 ]
-                 , Font.size (scaled 4)
+                 , Font.size backSize
                  ]
                     ++ futuraBold
                 )
