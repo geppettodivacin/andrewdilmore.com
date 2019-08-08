@@ -573,7 +573,7 @@ headerLinkInfo =
 siteHeader : HeaderState -> Element Msg
 siteHeader headerState =
     column
-        [ centerX, padding 20 ]
+        [ centerX, padding 20, width fill ]
         [ nameElement "ANDREW DILMORE" headerState.displayContact
         , headerLinkInfo
             |> List.map (headerLinkElement headerState)
