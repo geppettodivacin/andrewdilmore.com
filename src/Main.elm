@@ -1156,74 +1156,19 @@ aboutParagraphElements =
                 |> List.singleton
                 |> paragraph attributes
     in
-    [ [ """
-        I started learning creativity at an early age. Most people do,
-        somewhere between the sticky glue-covered hands and eating Play-Doh.
-        """
-            |> text
-      , """
-        “Music, writing, and art have inspired me greatly throughout my life
-        and influence who I am as a person,”
-        """
-            |> text
-            |> el [ Font.italic ]
-      , """ is what everyone writes on their cover letters, and I'm no exception
-        to the rule. But we're not here to talk about what makes me similar to
-        your other applicants.
-        """
-            |> text
-      ]
-        |> paragraph [ width fill ]
-        |> List.singleton
-        |> textColumn [ width fill ]
-    , [ "We want to know"
-            |> toParagraph []
-      , "WHAT MAKES ME DIFFERENT FROM EVERYONE ELSE?"
-            |> toParagraph [ Font.size (scaled 5) ]
-      ]
-        |> textColumn [ width fill ]
-    , """
-    After high school, I started working on a degree for Industrial Technology.
-    I spent four years expecting to join an industrial firm and work on
-    blueprints for a living. During that time, I went through multiple
-    depressive states, and I learned more about myself than I ever would have
-    learned about welding and OSHA. I would never be able to put my best foot
-    forward in a career path I consider to be just “okay.”
-    """
-        |> toParagraph []
-    , """
-    You cannot truly be satisfied with the work you accomplish if you don't
-    truly love the work you do.
-    """
-        |> toParagraph ([ Font.size (scaled 5) ] ++ futuraHeavy)
-    , [ """
-        After a year of soul searching, I dedicated myself to a career path in art
-        and graphic design. My GPA and mental state instantly improved, and I've
-        now graduated with a BA in Art. I've spent the last year focusing on
-        typography, layout, photography, and photo composition. My images have
-        appeared in official McNeese State University publications as well as in
-        """
-            |> text
-      , "American Press" |> text |> el [ Font.italic ]
-      , "," |> text
-      , "Thrive" |> text |> el [ Font.italic ]
-      , " magazine,"
-            |> text
-      , """
-        and the Lake Charles Southwest Louisiana Convention and Visitors Bureau
-        website.
-        """
-            |> text
+    [ "I started learning creativity at an early age. Most people do, somewhere between the sticky glue covered hands of the craft table to snacking on Play-Doh in the middle of your next Michelangelo masterpiece. From this creative, expressive little toddler came the much larger, creative, expressive individual making his way into the working world, both as a photographer, designer, and artist." |> toParagraph []
+    , [ "Most of my creative experience came through my love of Photoshop. I fell in love with the program partway into my college career, prompting me to abandon my old industrial tech degree and pursue Graphic Design. I thrived under my new degree, earning my Bachelor’s and taking my experience into a new professional career, where I worked for multiple companies as both a designer and Photographer. My freelance Photography has made its way onto platforms such as Spotify, " |> text
+      , "The American Press" |> text |> el [ Font.italic ]
+      , ", Panorama Music House, and " |> text
+      , "Thrive Magazine" |> text |> el [ Font.italic ]
+      , ". My employed history includes a position as Lead Designer at Signarama Sulphur, and photography positions at both Parish Pix and Lifetouch (real estate photography and portraiture respectively)." |> text
       ]
         |> paragraph []
-        |> List.singleton
-        |> textColumn [ width fill ]
-    , """
-    Please take a look at my portfolio. If you feel I would be a good fit for
-    your company, my contact info is listed in the header. Give me a call —
-    shoot me an email! I look forward to hearing from you.
-    """
-        |> toParagraph []
+    , "Please feel free to take a look at my portfolio. If you feel I would be a good fit for your company, my contact info is listed at the top of my website. Give me a call or shoot me an email! I look forward to hearing from you." |> toParagraph []
+    , [ "\"Your work is going to fill a large part of your life, and the only way to be truly satisfied is to do what you believe is great work. And the only way to do great work is to love what you do.\"" |> text |> el [ Font.italic ]
+      , " - Steve Jobs" |> text |> el futuraMedium
+      ]
+        |> paragraph []
     ]
 
 
