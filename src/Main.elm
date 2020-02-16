@@ -1150,23 +1150,27 @@ aboutElement viewport =
 
 aboutParagraphElements =
     let
-        toParagraph attributes paragraphText =
-            paragraphText
-                |> text
-                |> List.singleton
-                |> paragraph attributes
+        firstSentence =
+            [ Font.size (scaled 4 + 3) ] ++ futuraHeavy
     in
-    [ "I started learning creativity at an early age. Most people do, somewhere between the sticky glue covered hands of the craft table to snacking on Play-Doh in the middle of your next Michelangelo masterpiece. From this creative, expressive little toddler came the much larger, creative, expressive individual making his way into the working world, both as a photographer, designer, and artist." |> toParagraph []
-    , [ "Most of my creative experience came through my love of Photoshop. I fell in love with the program partway into my college career, prompting me to abandon my old industrial tech degree and pursue Graphic Design. I thrived under my new degree, earning my Bachelor’s and taking my experience into a new professional career, where I worked for multiple companies as both a designer and Photographer. My freelance Photography has made its way onto platforms such as Spotify, " |> text
+    [ [ "I started learning creativity at an early age." |> text |> el firstSentence
+      , " Most people do, somewhere between the sticky glue covered hands of the craft table to snacking on Play-Doh in the middle of your next Michelangelo masterpiece. From this creative, expressive little toddler came the much larger, creative, expressive individual making his way into the working world, both as a photographer, designer, and artist." |> text
+      ]
+        |> paragraph []
+    , [ "Most of my creative experience came through my love of Photoshop." |> text |> el firstSentence
+      , " I fell in love with the program partway into my college career, prompting me to abandon my old industrial tech degree and pursue Graphic Design. I thrived under my new degree, earning my Bachelor’s and taking my experience into a new professional career, where I worked for multiple companies as both a designer and Photographer. My freelance Photography has made its way onto platforms such as Spotify, " |> text
       , "The American Press" |> text |> el [ Font.italic ]
       , ", Panorama Music House, and " |> text
       , "Thrive Magazine" |> text |> el [ Font.italic ]
       , ". My employed history includes a position as Lead Designer at Signarama Sulphur, and photography positions at both Parish Pix and Lifetouch (real estate photography and portraiture respectively)." |> text
       ]
         |> paragraph []
-    , "Please feel free to take a look at my portfolio. If you feel I would be a good fit for your company, my contact info is listed at the top of my website. Give me a call or shoot me an email! I look forward to hearing from you." |> toParagraph []
-    , [ "\"Your work is going to fill a large part of your life, and the only way to be truly satisfied is to do what you believe is great work. And the only way to do great work is to love what you do.\"" |> text |> el [ Font.italic ]
-      , " - Steve Jobs" |> text |> el futuraMedium
+    , [ "Please feel free to take a look at my portfolio." |> text |> el firstSentence
+      , " If you feel I would be a good fit for your company, my contact info is listed at the top of my website. Give me a call or shoot me an email! I look forward to hearing from you." |> text
+      ]
+        |> paragraph []
+    , [ "\"Your work is going to fill a large part of your life, and the only way to be truly satisfied is to do what you believe is great work. And the only way to do great work is to love what you do.\"" |> text |> el ([ Font.italic ] ++ firstSentence)
+      , " - Steve Jobs" |> text |> el []
       ]
         |> paragraph []
     ]
