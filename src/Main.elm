@@ -1252,7 +1252,7 @@ portfolioCategoryListElement deviceClass currentCategory =
                     20
     in
     [ { category = "design", label = "Graphic Design" }
-    , { category = "photography", label = "Photography" }
+    , { category = "photography", label = "Photos & Composition" }
     ]
         |> List.map (portfolioCategoryElement deviceClass currentCategory)
         |> row
