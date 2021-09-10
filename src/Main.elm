@@ -1158,11 +1158,7 @@ aboutParagraphElements =
       ]
         |> paragraph []
     , [ "Most of my creative experience came through my love of Photoshop." |> text |> el firstSentence
-      , " I fell in love with the program partway into my college career, prompting me to abandon my old industrial tech degree and pursue Graphic Design. I thrived under my new degree, earning my Bachelor’s and taking my experience into a new professional career, where I worked for multiple companies as both a designer and Photographer. My freelance Photography has made its way onto platforms such as Spotify, " |> text
-      , "The American Press" |> text |> el [ Font.italic ]
-      , ", Panorama Music House, and " |> text
-      , "Thrive Magazine" |> text |> el [ Font.italic ]
-      , ". My employed history includes a position as Lead Designer at Signarama Sulphur, and photography positions at both Parish Pix and Lifetouch (real estate photography and portraiture respectively)." |> text
+      , " I fell in love with the program partway into my college career, prompting me to abandon my old industrial tech degree and pursue Graphic Design. I thrived under my new degree, earning my Bachelor’s and taking my experience into a new professional career. My current position at Decor Steals has me using Photoshop extensively, and my primary job in the company is editing products into various rooms." |> text
       ]
         |> paragraph []
     , [ "Please feel free to take a look at my portfolio." |> text |> el firstSentence
