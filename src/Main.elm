@@ -4,6 +4,7 @@ import Browser
 import Browser.Dom as Dom
 import Browser.Events
 import Browser.Navigation as Navigation
+import Debug
 import Dict exposing (Dict)
 import Element exposing (..)
 import Element.Background as Background
@@ -1210,9 +1211,7 @@ thumbnailListElement viewport data =
     in
     case data.listing of
         Success listing ->
-            listing
-                |> chunksOf (rowLength viewport)
-                |> thumbnailColumn viewport data.category
+            thumbnailSuccess viewport data.category listing
 
         NotAsked ->
             localLoaderElement
@@ -1225,17 +1224,59 @@ thumbnailListElement viewport data =
                 |> el [ centerX, centerY ]
 
 
+thumbnailSuccess : Viewport -> String -> CategoryListing -> Element Msg
+thumbnailSuccess viewport category listing =
+    let
+        thumbnails =
+            listing
+                |> chunksOf (rowLength viewport)
+                |> thumbnailColumn viewport category
+    in
+    thumbnails
+
+
 thumbnailColumn : Viewport -> String -> List (List ThumbnailInfo) -> Element Msg
 thumbnailColumn viewport currentCategory rows =
     let
+        baseWidth =
+            1918
+
         deviceClass =
             classifySimpleDevice viewport.device
+
+        clickMeLabel =
+            image
+                [ alignRight
+                , moveDown (98 + (toFloat viewport.sceneWidth - baseWidth) / 18)
+                , moveRight (120 + (toFloat viewport.sceneWidth - baseWidth) / 14)
+                , width (197 + ((viewport.sceneWidth - baseWidth) // 9) |> px)
+                ]
+                { src = assetUrl "clickMe.png", description = "Click me!" }
+
+        insertClickMeLabel =
+            List.indexedMap
+                (\i row ->
+                    if i /= 0 then
+                        row
+
+                    else
+                        el [ above clickMeLabel ] row
+                )
+
+        insertClickMeLabelForDesktop =
+            case classifySimpleDevice viewport.device of
+                FullDesktop ->
+                    insertClickMeLabel
+
+                Mobile ->
+                    identity
 
         insertHeader list =
             portfolioCategoryListElement deviceClass currentCategory :: list
     in
     rows
         |> List.map (thumbnailRow currentCategory viewport)
+        |> insertClickMeLabelForDesktop
         |> insertHeader
         |> column [ centerX, spacing 20 ]
 
