@@ -1241,13 +1241,24 @@ thumbnailColumn viewport currentCategory rows =
         baseWidth =
             1918
 
+        heightAdjustment =
+            case currentCategory of
+                "design" ->
+                    50
+
+                "photography" ->
+                    98
+
+                _ ->
+                    98
+
         deviceClass =
             classifySimpleDevice viewport.device
 
         clickMeLabel =
             image
                 [ alignRight
-                , moveDown (98 + (toFloat viewport.sceneWidth - baseWidth) / 18)
+                , moveDown (heightAdjustment + (toFloat viewport.sceneWidth - baseWidth) / 18)
                 , moveRight (120 + (toFloat viewport.sceneWidth - baseWidth) / 14)
                 , width (197 + ((viewport.sceneWidth - baseWidth) // 9) |> px)
                 ]
