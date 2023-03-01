@@ -38,6 +38,17 @@ main =
         }
 
 
+-- GROQ ########################################################################
+-- let URL = `https://${PROJECT_ID}.api.sanity.io/v2021-10-21/data/query/${DATASET}?query=${QUERY}`;
+groqQuery = """
+*[_type == 'collection']
+{ title,
+ 'albums': albums[]->{'thumbnailUrl': thumbnail.asset->url, slug, title}
+}
+"""
+groqUrl = Builder.crossOrigin "https://khv1ba20.api.sanity.io" ["v2021-10-21", "data", "query", "production" ] [Builder.string "query" groqQuery ]
+performGroqQuery = Http.get { url = groqUrl, expect = Http.expectString GotGroqResponse }
+
 
 -- ROUTES ######################################################################
 
@@ -156,6 +167,7 @@ type alias Model =
     { key : Navigation.Key
     , viewport : Viewport
     , page : Page
+    , groqResponse : String
     }
 
 
@@ -226,9 +238,10 @@ init flags url key =
             { key = key
             , viewport = toViewport flags.viewport
             , page = initialPage
+            , groqResponse = groqQuery
             }
     in
-    ( initialModel, Cmd.batch [ requestScene, pageRequests initialPage ] )
+    ( initialModel, Cmd.batch [ requestScene, pageRequests initialPage, performGroqQuery ] )
 
 
 toViewport dimensions =
@@ -256,6 +269,7 @@ type Msg
     | LeaveContact
     | GotThumbnailResponse (Result Http.Error ThumbnailDataResponse)
     | GotFullResponse (Result Http.Error FullDataResponse)
+    | GotGroqResponse (Result Http.Error String)
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -368,6 +382,18 @@ update msg model =
                 _ ->
                     ( model, requestScene )
 
+        GotGroqResponse result ->
+            let
+                newGroqResponse =
+                    case result of
+                        Ok data ->
+                            data
+
+                        Err errors ->
+                            Debug.toString errors
+            in
+            ( { model | groqResponse = newGroqResponse }, Cmd.none )
+
 
 updateHovered : Maybe String -> Page -> Page
 updateHovered hovered page =
@@ -451,7 +477,7 @@ bodyElementDesktop : Model -> Element Msg
 bodyElementDesktop model =
     case model.page of
         Home selected ->
-            homeDesktopElement model.viewport selected
+            homeDesktopElement model.viewport selected model.groqResponse
 
         About headerState ->
             usualBodyDesktop model.viewport headerState (aboutElement model.viewport)
@@ -848,12 +874,13 @@ notFoundElement =
 -- Desktop
 
 
-homeDesktopElement : Viewport -> Maybe String -> Element Msg
-homeDesktopElement viewport selected =
+homeDesktopElement : Viewport -> Maybe String -> String -> Element Msg
+homeDesktopElement viewport selected groqResponse =
     row [ height fill, width fill ]
         [ homeLinkListElement viewport selected
         , homeDividerElement
         , homePageGraphicElement viewport
+        , text groqResponse
         ]
 
 
