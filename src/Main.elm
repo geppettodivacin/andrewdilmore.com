@@ -1,5 +1,6 @@
 module Main exposing (main)
 
+import Aliases exposing (Album, Collection)
 import Browser
 import Browser.Dom as Dom
 import Browser.Events
@@ -16,10 +17,12 @@ import Html exposing (Html)
 import Html.Attributes
 import Html.Events
 import Http
+import Http exposing (Error(..))
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as List
 import RemoteData exposing (RemoteData(..), WebData)
+import Sanity
 import Task
 import Url exposing (Url)
 import Url.Builder as Builder
@@ -38,28 +41,17 @@ main =
         }
 
 
--- GROQ ########################################################################
--- let URL = `https://${PROJECT_ID}.api.sanity.io/v2021-10-21/data/query/${DATASET}?query=${QUERY}`;
-groqQuery = """
-*[_type == 'collection']
-{ title,
- 'albums': albums[]->{'thumbnailUrl': thumbnail.asset->url, slug, title}
-}
-"""
-groqUrl = Builder.crossOrigin "https://khv1ba20.api.sanity.io" ["v2021-10-21", "data", "query", "production" ] [Builder.string "query" groqQuery ]
-performGroqQuery = Http.get { url = groqUrl, expect = Http.expectString GotGroqResponse }
-
 
 -- ROUTES ######################################################################
 
 
-route : Parser (Page -> a) a
-route =
+route : Model -> Parser (Page -> a) a
+route model =
     oneOf
         [ Url.map makeFullSize (s "portfolio" </> string </> s "full" </> string)
         , Url.map makeAbout (s "about" </> top)
         , Url.map makeResume (s "resume" </> top)
-        , Url.map makeThumbnails (s "portfolio" </> string)
+        , Url.map (makeThumbnails model.pulledCollections) (s "portfolio" </> string)
         , Url.map (Home Nothing) top
         ]
 
@@ -69,9 +61,9 @@ isImageUrl url =
     String.startsWith "/images" url.path
 
 
-toPage : Url -> Page
-toPage url =
-    Maybe.withDefault NotFound (Url.parse route url)
+toPage : Model -> Url -> Page
+toPage model url =
+    Maybe.withDefault NotFound (Url.parse (route model) url)
 
 
 makeHeaderState selected =
@@ -88,15 +80,16 @@ makeResume =
     Resume (makeHeaderState headerTitle.resume)
 
 
-makeThumbnails : String -> Page
-makeThumbnails category =
-    Thumbnails (makeHeaderState headerTitle.portfolio) (makeThumbnailData category)
+makeThumbnails : WebData (List Collection) -> String -> Page
+makeThumbnails collections currentCategory =
+    Thumbnails (makeHeaderState headerTitle.portfolio) (thumbnailDataFromSanityCache currentCategory collections)
 
 
-makeThumbnailData : String -> ThumbnailData
-makeThumbnailData category =
-    { category = category
+makeThumbnailData : List CategoryInfo -> String -> ThumbnailData
+makeThumbnailData categories currentCategory =
+    { currentCategory = currentCategory
     , listing = NotAsked
+    , categories = categories
     }
 
 
@@ -167,7 +160,7 @@ type alias Model =
     { key : Navigation.Key
     , viewport : Viewport
     , page : Page
-    , groqResponse : String
+    , pulledCollections : WebData (List Collection)
     }
 
 
@@ -213,13 +206,20 @@ type PortfolioFile
 
 
 type alias ThumbnailData =
-    { category : String
+    { currentCategory : String
+    , categories : List CategoryInfo
     , listing : WebData CategoryListing
     }
 
 
 type alias CategoryListing =
     List ThumbnailInfo
+
+
+type alias CategoryInfo =
+    { category : String
+    , label : String
+    }
 
 
 type alias ThumbnailInfo =
@@ -231,17 +231,21 @@ type alias ThumbnailInfo =
 init : { viewport : { width : Int, height : Int } } -> Url -> Navigation.Key -> ( Model, Cmd Msg )
 init flags url key =
     let
-        initialPage =
-            toPage url
-
-        initialModel =
+        initialModelWithoutPage : Model
+        initialModelWithoutPage =
             { key = key
             , viewport = toViewport flags.viewport
-            , page = initialPage
-            , groqResponse = groqQuery
+            , page = NotFound
+            , pulledCollections = NotAsked
             }
+
+        initialPage =
+            toPage initialModelWithoutPage url
+
+        initialModel =
+            { initialModelWithoutPage | page = initialPage }
     in
-    ( initialModel, Cmd.batch [ requestScene, pageRequests initialPage, performGroqQuery ] )
+    ( initialModel, Cmd.batch [ requestScene, modelRequests initialModel] )
 
 
 toViewport dimensions =
@@ -267,9 +271,8 @@ type Msg
     | MouseLeaveLink
     | EnterContact
     | LeaveContact
-    | GotThumbnailResponse (Result Http.Error ThumbnailDataResponse)
     | GotFullResponse (Result Http.Error FullDataResponse)
-    | GotGroqResponse (Result Http.Error String)
+    | GotGroqResponse (Result Http.Error (List Collection))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -317,16 +320,7 @@ update msg model =
         ChangedUrl url ->
             let
                 page =
-                    toPage url
-
-                oldViewport =
-                    model.viewport
-
-                newViewport =
-                    { oldViewport
-                        | sceneWidth = oldViewport.width
-                        , sceneHeight = oldViewport.height
-                    }
+                    toPage model url
             in
             ( { model | page = page }, Cmd.batch [ requestScene, pageRequests page ] )
 
@@ -358,18 +352,6 @@ update msg model =
             in
             ( { model | page = newPage }, Cmd.none )
 
-        GotThumbnailResponse result ->
-            case model.page of
-                Thumbnails _ data ->
-                    let
-                        newPage =
-                            thumbnailPageFromResponse data.category result
-                    in
-                    ( { model | page = newPage }, requestScene )
-
-                _ ->
-                    ( model, requestScene )
-
         GotFullResponse result ->
             case model.page of
                 FullSize _ data ->
@@ -384,15 +366,18 @@ update msg model =
 
         GotGroqResponse result ->
             let
-                newGroqResponse =
+                newPulledCollections =
                     case result of
                         Ok data ->
-                            data
+                            Success data
 
-                        Err errors ->
-                            Debug.toString errors
+                        Err error ->
+                            Failure error
+
+                newPage =
+                    updatePageWithSanityCache newPulledCollections model.page
             in
-            ( { model | groqResponse = newGroqResponse }, Cmd.none )
+            ( { model | pulledCollections = newPulledCollections }, Cmd.none )
 
 
 updateHovered : Maybe String -> Page -> Page
@@ -439,6 +424,57 @@ updateDisplayContact displayContact page =
             page
 
 
+updatePageWithSanityCache : WebData (List Collection) -> Page -> Page
+updatePageWithSanityCache sanityCache page =
+    case page of
+        Thumbnails headerState thumbnailData ->
+            Thumbnails headerState (thumbnailDataFromSanityCache thumbnailData.currentCategory sanityCache)
+
+        _ ->
+            page
+
+
+thumbnailDataFromSanityCache : String -> WebData (List Collection) -> ThumbnailData
+thumbnailDataFromSanityCache currentCategory sanityCache =
+    let
+        toCategoryInfo : Collection -> CategoryInfo
+        toCategoryInfo collection =
+            { category = collection.slug
+            , label = collection.title
+            }
+        
+        newCategories =
+            sanityCache
+                |> RemoteData.map (List.map toCategoryInfo)
+                |> RemoteData.withDefault []
+
+        newCurrentCategory : String
+        newCurrentCategory =
+            if currentCategory == "" then
+                sanityCache
+                    |> RemoteData.map List.head
+                    |> RemoteData.andThen (RemoteData.fromMaybe NetworkError)
+                    |> RemoteData.map (\collection -> collection.slug)
+                    |> RemoteData.withDefault ""
+            else
+                currentCategory
+
+        toThumbnailInfo : Album -> ThumbnailInfo
+        toThumbnailInfo album =
+            { thumbnail = album.thumbnailUrl, resourceQuery = album.slug }
+
+        currentCollection : List Collection -> Maybe Collection
+        currentCollection sanityCacheData =
+            sanityCacheData
+                |> List.find (\collection -> collection.slug == newCurrentCategory)
+
+        newListing =
+            sanityCache
+                |> RemoteData.map currentCollection
+                |> RemoteData.andThen (RemoteData.fromMaybe NetworkError)
+                |> RemoteData.map (\collection -> List.map toThumbnailInfo collection.albums)
+    in
+    { categories = newCategories, currentCategory = newCurrentCategory, listing = newListing }
 
 -- SUBSCRIPTIONS ###############################################################
 
@@ -446,7 +482,6 @@ updateDisplayContact displayContact page =
 subscriptions : Model -> Sub Msg
 subscriptions model =
     Browser.Events.onResize WindowResize
-
 
 
 -- VIEW #######################################################################
@@ -477,7 +512,7 @@ bodyElementDesktop : Model -> Element Msg
 bodyElementDesktop model =
     case model.page of
         Home selected ->
-            homeDesktopElement model.viewport selected model.groqResponse
+            homeDesktopElement model.viewport selected
 
         About headerState ->
             usualBodyDesktop model.viewport headerState (aboutElement model.viewport)
@@ -874,13 +909,12 @@ notFoundElement =
 -- Desktop
 
 
-homeDesktopElement : Viewport -> Maybe String -> String -> Element Msg
-homeDesktopElement viewport selected groqResponse =
+homeDesktopElement : Viewport -> Maybe String -> Element Msg
+homeDesktopElement viewport selected =
     row [ height fill, width fill ]
         [ homeLinkListElement viewport selected
         , homeDividerElement
         , homePageGraphicElement viewport
-        , text groqResponse
         ]
 
 
@@ -1238,7 +1272,7 @@ thumbnailListElement viewport data =
     in
     case data.listing of
         Success listing ->
-            thumbnailSuccess viewport data.category listing
+            thumbnailSuccess viewport data.categories data.currentCategory listing
 
         NotAsked ->
             localLoaderElement
@@ -1251,19 +1285,19 @@ thumbnailListElement viewport data =
                 |> el [ centerX, centerY ]
 
 
-thumbnailSuccess : Viewport -> String -> CategoryListing -> Element Msg
-thumbnailSuccess viewport category listing =
+thumbnailSuccess : Viewport -> List CategoryInfo -> String -> CategoryListing -> Element Msg
+thumbnailSuccess viewport categories category listing =
     let
         thumbnails =
             listing
                 |> chunksOf (rowLength viewport)
-                |> thumbnailColumn viewport category
+                |> thumbnailColumn viewport categories category
     in
     thumbnails
 
 
-thumbnailColumn : Viewport -> String -> List (List ThumbnailInfo) -> Element Msg
-thumbnailColumn viewport currentCategory rows =
+thumbnailColumn : Viewport -> List CategoryInfo -> String -> List (List ThumbnailInfo) -> Element Msg
+thumbnailColumn viewport categories currentCategory rows =
     let
         baseWidth =
             1918
@@ -1310,7 +1344,7 @@ thumbnailColumn viewport currentCategory rows =
                     identity
 
         insertHeader list =
-            portfolioCategoryListElement deviceClass currentCategory :: list
+            portfolioCategoryListElement deviceClass categories currentCategory :: list
     in
     rows
         |> List.map (thumbnailRow currentCategory viewport)
@@ -1319,8 +1353,8 @@ thumbnailColumn viewport currentCategory rows =
         |> column [ centerX, spacing 20 ]
 
 
-portfolioCategoryListElement : SimpleDeviceClass -> String -> Element Msg
-portfolioCategoryListElement deviceClass currentCategory =
+portfolioCategoryListElement : SimpleDeviceClass -> List CategoryInfo -> String -> Element Msg
+portfolioCategoryListElement deviceClass categories currentCategory =
     let
         elementSpacing =
             case deviceClass of
@@ -1330,9 +1364,7 @@ portfolioCategoryListElement deviceClass currentCategory =
                 FullDesktop ->
                     20
     in
-    [ { category = "design", label = "Graphic Design" }
-    , { category = "photography", label = "Photos & Composition" }
-    ]
+    categories
         |> List.map (portfolioCategoryElement deviceClass currentCategory)
         |> row
             [ spacing elementSpacing
@@ -1340,7 +1372,7 @@ portfolioCategoryListElement deviceClass currentCategory =
             ]
 
 
-portfolioCategoryElement : SimpleDeviceClass -> String -> { category : String, label : String } -> Element Msg
+portfolioCategoryElement : SimpleDeviceClass -> String -> CategoryInfo -> Element Msg
 portfolioCategoryElement deviceClass currentCategory info =
     let
         isSelected =
@@ -1681,15 +1713,33 @@ futuraBold =
 -- REQUESTS #####################################################################
 
 
+modelRequests : Model -> Cmd Msg
+modelRequests model =
+    let
+        requestsFromPage =
+            pageRequests model.page
+
+        requestsFromSanityCache =
+            sanityRequests model.pulledCollections
+    in
+    Cmd.batch [requestsFromPage, requestsFromSanityCache]
+
+
 pageRequests : Page -> Cmd Msg
 pageRequests page =
     case page of
-        Thumbnails _ data ->
-            requestThumbnailData { category = data.category }
-
         FullSize _ data ->
             requestFullData { category = data.category, resource = data.resource }
 
+        _ ->
+            Cmd.none
+
+
+sanityRequests : WebData a -> Cmd Msg
+sanityRequests sanityWebData =
+    case sanityWebData of
+        NotAsked ->
+            Sanity.fetchCollections GotGroqResponse
         _ ->
             Cmd.none
 
@@ -1705,14 +1755,6 @@ type alias FullDataResponse =
     , resource : String
     , contents : PortfolioFolder
     }
-
-
-requestThumbnailData : { category : String } -> Cmd Msg
-requestThumbnailData request =
-    Http.get
-        { url = thumbnailQueryUrl request.category
-        , expect = Http.expectJson GotThumbnailResponse decodeThumbnailData
-        }
 
 
 requestFullData : { category : String, resource : String } -> Cmd Msg
@@ -1789,17 +1831,6 @@ requestScene =
                 (round viewport.scene.height)
         )
         Dom.getViewport
-
-
-thumbnailPageFromResponse : String -> Result Http.Error ThumbnailDataResponse -> Page
-thumbnailPageFromResponse category response =
-    let
-        data =
-            { category = category
-            , listing = RemoteData.fromResult (Result.map .listing response)
-            }
-    in
-    Thumbnails (makeHeaderState headerTitle.portfolio) data
 
 
 fullPageFromResponse : String -> String -> Result Http.Error FullDataResponse -> Page
