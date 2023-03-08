@@ -272,6 +272,7 @@ type Msg
     | EnterContact
     | LeaveContact
     | GotFullResponse (Result Http.Error FullDataResponse)
+    | StartGroqRequest
     | GotGroqResponse (Result Http.Error (List Collection))
 
 
@@ -364,6 +365,13 @@ update msg model =
                 _ ->
                     ( model, requestScene )
 
+        StartGroqRequest ->
+            let
+                newPage =
+                    updatePageWithSanityCache Loading model.page
+            in
+            ( { model | pulledCollections = Loading, page = newPage }, Cmd.none )
+
         GotGroqResponse result ->
             let
                 newPulledCollections =
@@ -377,7 +385,7 @@ update msg model =
                 newPage =
                     updatePageWithSanityCache newPulledCollections model.page
             in
-            ( { model | pulledCollections = newPulledCollections }, Cmd.none )
+            ( { model | pulledCollections = newPulledCollections, page = newPage }, Cmd.none )
 
 
 updateHovered : Maybe String -> Page -> Page
@@ -1739,7 +1747,16 @@ sanityRequests : WebData a -> Cmd Msg
 sanityRequests sanityWebData =
     case sanityWebData of
         NotAsked ->
-            Sanity.fetchCollections GotGroqResponse
+            let
+                fetchCollections =
+                    Sanity.fetchCollections GotGroqResponse
+
+                startRequest =
+                    Task.succeed ()
+                        |> Task.perform (always StartGroqRequest)
+            in
+            Cmd.batch [startRequest, fetchCollections]
+
         _ ->
             Cmd.none
 
