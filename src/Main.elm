@@ -1,6 +1,6 @@
 module Main exposing (main)
 
-import Aliases exposing (Album, Collection)
+import Aliases exposing (Album, Collection, FullSizeImage)
 import Browser
 import Browser.Dom as Dom
 import Browser.Events
@@ -271,7 +271,7 @@ type Msg
     | MouseLeaveLink
     | EnterContact
     | LeaveContact
-    | GotFullResponse (Result Http.Error FullDataResponse)
+    | GotFullResponse (Result Http.Error (List FullSizeImage))
     | StartSanityRequest
     | GotSanityResponse (Result Http.Error (List Collection))
 
@@ -1737,7 +1737,7 @@ pageRequests : Page -> Cmd Msg
 pageRequests page =
     case page of
         FullSize _ data ->
-            requestFullData { category = data.category, resource = data.resource }
+            Sanity.fetchFullSizeAlbum GotFullResponse data.resource
 
         _ ->
             Cmd.none
@@ -1772,14 +1772,6 @@ type alias FullDataResponse =
     , resource : String
     , contents : PortfolioFolder
     }
-
-
-requestFullData : { category : String, resource : String } -> Cmd Msg
-requestFullData request =
-    Http.get
-        { url = fullQueryUrl request.category request.resource
-        , expect = Http.expectJson GotFullResponse decodeFullData
-        }
 
 
 decodeThumbnailData : Decode.Decoder ThumbnailDataResponse
@@ -1850,13 +1842,13 @@ requestScene =
         Dom.getViewport
 
 
-fullPageFromResponse : String -> String -> Result Http.Error FullDataResponse -> Page
+fullPageFromResponse : String -> String -> Result Http.Error (List FullSizeImage) -> Page
 fullPageFromResponse category resource response =
     let
         data =
             { category = category
             , resource = resource
-            , contents = RemoteData.fromResult (Result.map .contents response)
+            , contents = RemoteData.fromResult (Result.map (List.map (\image -> PortfolioImage image.url)) response)
             }
     in
     FullSize (makeHeaderState headerTitle.portfolio) data

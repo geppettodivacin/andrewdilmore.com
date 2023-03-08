@@ -1,4 +1,4 @@
-module Aliases exposing (Album, Collection)
+module Aliases exposing (Album, Collection, FullSizeImage)
 
 
 type alias Album =
@@ -13,4 +13,9 @@ type alias Collection =
     , slug : String
     , albums : List Album
     , heightAdjustment : Int
+    }
+
+
+type alias FullSizeImage =
+    { url : String
     }
