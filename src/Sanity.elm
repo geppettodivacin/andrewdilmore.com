@@ -68,8 +68,22 @@ fetchCollections toMsg =
               'albums': albums[]->{'thumbnailUrl': thumbnail.asset->url, slug, title}
             }
             """
+
+        addImageResolutionsToAlbum : Album -> Album
+        addImageResolutionsToAlbum album =
+            { album | thumbnailUrl = Builder.crossOrigin album.thumbnailUrl [] [Builder.int "h" 400, Builder.int "w" 400]}
+
+        addImageResolutionsToCollections : List Collection -> List Collection
+        addImageResolutionsToCollections collections =
+            collections
+                |> List.map (\collection -> { collection | albums = List.map addImageResolutionsToAlbum collection.albums})
+
+        addImageResolutionsToResult : Result Http.Error (List Collection) -> Result Http.Error (List Collection)
+        addImageResolutionsToResult result =
+            result
+                |> Result.map addImageResolutionsToCollections
     in
     Http.get
         { url = sanityQueryUrl query
-        , expect = Http.expectJson toMsg (resultDecoder (Decode.list collectionDecoder))
+        , expect = Http.expectJson (toMsg << addImageResolutionsToResult) (resultDecoder (Decode.list collectionDecoder))
         }
