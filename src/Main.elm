@@ -272,8 +272,8 @@ type Msg
     | EnterContact
     | LeaveContact
     | GotFullResponse (Result Http.Error FullDataResponse)
-    | StartGroqRequest
-    | GotGroqResponse (Result Http.Error (List Collection))
+    | StartSanityRequest
+    | GotSanityResponse (Result Http.Error (List Collection))
 
 
 update : Msg -> Model -> ( Model, Cmd Msg )
@@ -365,14 +365,14 @@ update msg model =
                 _ ->
                     ( model, requestScene )
 
-        StartGroqRequest ->
+        StartSanityRequest ->
             let
                 newPage =
                     updatePageWithSanityCache Loading model.page
             in
             ( { model | pulledCollections = Loading, page = newPage }, Cmd.none )
 
-        GotGroqResponse result ->
+        GotSanityResponse result ->
             let
                 newPulledCollections =
                     case result of
@@ -1749,11 +1749,11 @@ sanityRequests sanityWebData =
         NotAsked ->
             let
                 fetchCollections =
-                    Sanity.fetchCollections GotGroqResponse
+                    Sanity.fetchCollections GotSanityResponse
 
                 startRequest =
                     Task.succeed ()
-                        |> Task.perform (always StartGroqRequest)
+                        |> Task.perform (always StartSanityRequest)
             in
             Cmd.batch [startRequest, fetchCollections]
 
